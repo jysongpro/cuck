@@ -1921,7 +1921,7 @@ function renderHistory() {
   const list = HistoryStore.all();
   const rows = list.map((r, i) => `
     <tr>
-      <td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>
+      ${isAdmin() ? `<td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>` : ''}
       <td>${i + 1}</td>
       <td class="l">${esc(r.info.과정 || r.courseName)}</td>
       <td class="l"><input type="text" class="hist-inline-input" data-id="${r.id}" data-field="대학" value="${esc(r.info.대학 || '')}" placeholder="대학명" onchange="updateHistoryField('${r.id}','대학',this.value)"></td>
@@ -1935,7 +1935,7 @@ function renderHistory() {
       <td class="l"><input type="text" class="hist-inline-input" data-id="${r.id}" data-field="remark" value="${esc(r.remark || '')}" placeholder="비고 입력" onchange="updateHistoryField('${r.id}','remark',this.value)"></td>
       <td>
         <button class="btn btn-ghost btn-sm" onclick="navigate('history/${r.id}')">보기</button>
-        <button class="btn btn-ghost btn-sm" onclick="deleteHistoryOne('${r.id}')">삭제</button>
+        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="deleteHistoryOne('${r.id}')">삭제</button>` : ''}
       </td>
     </tr>`).join('');
 
@@ -1949,13 +1949,16 @@ function renderHistory() {
         <div class="notice info"><span class="n-ico">${ICON.info}</span>
           <div>아직 저장된 검수결과가 없습니다. 커리큘럼 체크 실행 후 <b>검수결과 저장</b> 버튼으로 내역을 쌓아보세요.</div></div>
       ` : `
+        ${isAdmin() ? `
         <div class="toolbar" style="margin-bottom:10px">
           <button class="btn btn-ghost btn-sm" onclick="toggleAllHistory(this)">전체 선택/해제</button>
           <button class="btn btn-danger btn-sm" onclick="deleteHistorySelected()">${ICON.no} 선택 삭제</button>
           <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel()">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
           <button class="btn btn-soft btn-sm" onclick="remapAllHistoryUniv()" title="저장된 모든 항목의 캠퍼스명을 기준으로 대학 정보를 자동으로 다시 채웁니다">${ICON.set || ''} 대학 자동매핑</button>
           <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·과정평가형·비고는 표에서 직접 입력·수정할 수 있습니다.</span>
-        </div>
+        </div>` : `
+        <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
+          <div>검수결과 보기만 가능합니다. 삭제·엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div></div>`}
         <div class="panel" style="overflow-x:auto">
           <table class="vtable">
             <thead><tr>
@@ -1984,6 +1987,7 @@ function updateHistoryField(id, field, value) {
 }
 /* 검수내역에 저장된 모든 항목의 캠퍼스명을 기준으로 대학 컬럼을 일괄 재매핑 */
 function remapAllHistoryUniv() {
+  if (!isAdmin()) { toast('이 기능은 관리자만 이용할 수 있습니다.'); return; }
   const list = HistoryStore.all();
   if (!list.length) { toast('저장된 검수내역이 없습니다.'); return; }
   let updated = 0;
@@ -2001,6 +2005,7 @@ function remapAllHistoryUniv() {
 
 /* 검수내역 전체 목록을 엑셀(.xls, HTML 표 기반 — 별도 라이브러리 없이 오프라인에서도 엑셀로 정상 열림)로 내보낸다 */
 function exportHistoryToExcel() {
+  if (!isAdmin()) { toast('엑셀 내려받기는 관리자만 이용할 수 있습니다.'); return; }
   const list = HistoryStore.all();
   if (!list.length) { toast('저장된 검수내역이 없습니다.'); return; }
   const headers = ['순번', '과정', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
@@ -2043,6 +2048,7 @@ function toggleAllHistory(btn) {
 }
 
 function deleteHistoryOne(id) {
+  if (!isAdmin()) { toast('삭제는 관리자만 이용할 수 있습니다.'); return; }
   if (!confirm('이 검수결과 내역을 삭제하시겠습니까?')) return;
   HistoryStore.remove([id]);
   toast('삭제했습니다.');
@@ -2050,6 +2056,7 @@ function deleteHistoryOne(id) {
 }
 
 function deleteHistorySelected() {
+  if (!isAdmin()) { toast('삭제는 관리자만 이용할 수 있습니다.'); return; }
   const ids = [...document.querySelectorAll('.hist-check:checked')].map(b => b.dataset.id);
   if (!ids.length) { toast('삭제할 항목을 선택하세요.'); return; }
   if (!confirm(`선택한 ${ids.length}건의 검수결과 내역을 삭제하시겠습니까?`)) return;
