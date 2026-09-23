@@ -12,7 +12,7 @@
  *    표시되는 firebaseConfig 값을 아래에 붙여넣습니다.
  * ========================================================================= */
 window.FIREBASE_CONFIG = {
-apiKey: "AIzaSyCZI83_8mOYcBJoFvcb6D4MV5DNOBGJjIQ",
+    apiKey: "AIzaSyCZI83_8mOYcBJoFvcb6D4MV5DNOBGJjIQ",
     authDomain: "cuck-3907f.firebaseapp.com",
     projectId: "cuck-3907f",
     storageBucket: "cuck-3907f.firebasestorage.app",
