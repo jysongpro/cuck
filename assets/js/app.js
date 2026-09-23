@@ -2023,7 +2023,7 @@ function renderHistory() {
         <div class="panel" style="overflow-x:auto">
           <table class="vtable">
             <thead><tr>
-              <th style="width:34px"></th><th style="width:44px">순번</th><th>과정</th><th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
+              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th><th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
               <th style="width:80px">과정평가형</th><th>저장일시</th><th style="width:70px">판정</th><th style="width:70px">충족률</th><th style="width:150px">비고</th><th style="width:130px">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
