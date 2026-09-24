@@ -184,7 +184,15 @@ const SIMPLE_LIST_TYPES = {
   industrialAi: { storeKey: 'kpu-curri-simplelist-industrialai-v1', ruleKey: 'kpu-curri-simplerule-industrialai-v1', regTitle: '산업AI교과 등록', checkTitle: '산업AI교과 편성확인', itemLabel: '산업AI교과', checkLabel: '산업AI교과 편성 여부' },
   aiApplied: { storeKey: 'kpu-curri-simplelist-aiapplied-v1', ruleKey: 'kpu-curri-simplerule-aiapplied-v1', regTitle: 'AI활용교과 등록', checkTitle: 'AI활용교과 편성확인', itemLabel: 'AI활용교과', checkLabel: 'AI활용교과 편성 여부' },
 };
-const SIMPLE_RULE_DEFAULT = { checkMinOne: true, minCount: 1 };
+const SIMPLE_RULE_DEFAULT = { checkMinOne: true, minCount: 1, minTotalHours: 0, allowedSemesters: '' };
+/* 과정별(특히 직업교육과정은 시간 기준) 기본 검수기준 — 관리자가 한번도 저장한 적 없을 때만 적용되는 초기값 */
+const SIMPLE_RULE_COURSE_DEFAULTS = {
+  'voc-tech': {
+    safety:       { checkMinOne: true, minCount: 1, minTotalHours: 16, allowedSemesters: '2' },
+    industrialAi: { checkMinOne: true, minCount: 1, minTotalHours: 20, allowedSemesters: '' },
+    aiApplied:    { checkMinOne: true, minCount: 1, minTotalHours: 20, allowedSemesters: '' },
+  },
+};
 /* 이 앱이 사용하는 모든 localStorage 키 — 내보내기/가져오기(백업·복원) 대상 */
 function allStorageKeys() {
   const keys = [STORE_KEY, RULE_KEY, HISTORY_KEY, LIBERAL_KEY, LIBERAL_RULE_KEY];
@@ -258,7 +266,11 @@ const SimpleListStore = {
 };
 const SimpleRuleStore = {
   all(type) { try { return JSON.parse(localStorage.getItem(SIMPLE_LIST_TYPES[type].ruleKey)) || {}; } catch { return {}; } },
-  get(type, courseKey) { const saved = this.all(type)[courseKey]; return Object.assign({}, SIMPLE_RULE_DEFAULT, saved || {}); },
+  get(type, courseKey) {
+    const saved = this.all(type)[courseKey];
+    const base = (SIMPLE_RULE_COURSE_DEFAULTS[courseKey] && SIMPLE_RULE_COURSE_DEFAULTS[courseKey][type]) || SIMPLE_RULE_DEFAULT;
+    return Object.assign({}, SIMPLE_RULE_DEFAULT, base, saved || {});
+  },
   save(type, courseKey, rule) { const all = this.all(type); all[courseKey] = rule; localStorage.setItem(SIMPLE_LIST_TYPES[type].ruleKey, JSON.stringify(all)); },
 };
 
@@ -467,7 +479,13 @@ function renderHome() {
                 <p>학위·학위전공심화 과정의<br>교과편성 기준 검수</p>
                 <div class="tags"><span>학위과정</span><span>학위전공심화과정</span></div>
               </button>
-              <!-- 직업교육과정 아이콘은 숨김 처리(요청에 따라). 라우트(cat/vocational) 자체는 유지됨. -->
+              <button class="menu-card" onclick="navigate('cat/vocational')">
+                <span class="num">2</span>
+                <div class="icon-wrap">${ICON.tools}</div>
+                <h3>직업교육과정</h3>
+                <p>전문기술·하이테크·중장년특화장기<br>일반계위탁·기능장 과정 기준 검수</p>
+                <div class="tags"><span>전문기술</span><span>하이테크</span><span>중장년특화장기</span><span>일반계위탁</span><span>기능장</span></div>
+              </button>
             </div>
           </div>
           <div class="home-art">${HERO_ART}</div>
@@ -677,10 +695,10 @@ function renderSpecStandards(courseKey, found) {
           : '아직 저장 전이라 <b>공식 문서 기본값</b>이 표시됩니다.'}</div></div>
 
       <div class="toolbar" style="margin-bottom:18px">
-        ${['degree-regular','degree-advanced'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/liberal/${courseKey}')">${ICON.set} 교양교과 설정</button>` : ''}
-        ${['degree-regular','degree-advanced'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/safety/${courseKey}')">${ICON.set} 산업안전교과 설정</button>` : ''}
-        ${['degree-regular','degree-advanced'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/industrialAi/${courseKey}')">${ICON.set} 산업AI교과 설정</button>` : ''}
-        ${['degree-regular','degree-advanced'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/aiApplied/${courseKey}')">${ICON.set} AI활용교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/liberal/${courseKey}')">${ICON.set} 교양교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/safety/${courseKey}')">${ICON.set} 산업안전교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/industrialAi/${courseKey}')">${ICON.set} 산업AI교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/aiApplied/${courseKey}')">${ICON.set} AI활용교과 설정</button>` : ''}
         <div class="spacer"></div>
         <button class="btn btn-soft" onclick="navigate('cat/${cat.key}/check')">${ICON.check} 교과과정 체크 이동하기 ${ICON.arrow}</button>
       </div>
@@ -1101,6 +1119,15 @@ function slRulePanelHtml() {
         <span class="la-rule-label">등록된 ${esc(meta.itemLabel)} 중 최소 편성 수 검수 · 최소</span>
         <input type="number" min="0" step="1" id="slR_minCount" value="${esc(r.minCount)}" style="width:70px"> 과목
       </div>
+      <div class="la-rule-row">
+        <span class="la-rule-label">시간(직업교육과정 등 시간 기반 과정용) · 매칭된 교과의 총 편성시간 합계 최소</span>
+        <input type="number" min="0" step="1" id="slR_minTotalHours" value="${esc(r.minTotalHours || 0)}" style="width:70px"> 시간
+        <span style="font-size:12px;color:var(--c-text-soft)">(0 = 검수 안 함, 업로드된 교과의 학점/시간 입력값 합산)</span>
+      </div>
+      <div class="la-rule-row">
+        <span class="la-rule-label">편성 허용 학기(직업교육과정 등에서 특정 학기로 제한할 때 사용)</span>
+        <input type="text" id="slR_allowedSemesters" value="${esc(r.allowedSemesters || '')}" placeholder="예: 2 또는 2,4 (비우면 전체 학기 허용)" style="width:180px">
+      </div>
       <div class="toolbar" style="margin-top:12px">
         <button class="btn btn-primary btn-sm" onclick="slSaveRule()">${ICON.ok} 검수기준 저장</button>
         <button class="btn btn-ghost btn-sm" onclick="slResetRule()">기본값으로 초기화</button>
@@ -1115,6 +1142,8 @@ function slSaveRule() {
   slRule = {
     checkMinOne: !!($('#slR_checkMinOne') || {}).checked,
     minCount: Number((($('#slR_minCount') || {}).value) || 1),
+    minTotalHours: Number((($('#slR_minTotalHours') || {}).value) || 0),
+    allowedSemesters: (($('#slR_allowedSemesters') || {}).value || '').trim(),
   };
   SimpleRuleStore.save(slType, slCourseKey, slRule);
   toast('검수기준이 저장되었습니다.');
