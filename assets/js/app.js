@@ -1036,8 +1036,10 @@ let slType = null, slCourseKey = null;
 
 function slCopyFromRegular(type, courseKey) {
   const meta = SIMPLE_LIST_TYPES[type];
+  const found = findCourse(courseKey);
+  const targetName = (found && found.course && found.course.name) || courseKey;
   if (!SimpleListStore.isSet(type, 'degree-regular')) { toast(`학위과정(degree-regular)에 저장된 ${meta.itemLabel} 설정이 없습니다.`); return; }
-  if (!confirm(`학위과정에 저장된 ${meta.itemLabel} 설정을 그대로 복사합니다. 현재 전공심화과정 설정은 덮어씌워집니다. 계속할까요?`)) return;
+  if (!confirm(`학위과정에 저장된 ${meta.itemLabel} 설정을 그대로 복사합니다. 현재 ${targetName} 설정은 덮어씌워집니다. 계속할까요?`)) return;
   SimpleListStore.save(type, courseKey, SimpleListStore.get(type, 'degree-regular'));
   SimpleRuleStore.save(type, courseKey, SimpleRuleStore.get(type, 'degree-regular'));
   toast(`학위과정 ${meta.itemLabel} 설정을 복사했습니다.`);
@@ -1065,7 +1067,7 @@ function renderSimpleList(type, courseKey) {
       <div class="toolbar" style="margin-bottom:12px">
         <button class="btn btn-soft" onclick="slToggleRulePanel()">${ICON.set} ${esc(meta.checkLabel)} 검수기준 설정</button>
         <span style="font-size:12.5px;color:var(--c-text-soft)">향후 검수로직(최소 편성 과목수)이 변경될 경우 여기서 수정하세요.</span>
-        ${courseKey === 'degree-advanced' ? `<button class="btn btn-ghost" onclick="slCopyFromRegular('${type}','${courseKey}')">${ICON.set || ''} 학위과정 설정 그대로 가져오기</button>` : ''}
+        ${(courseKey === 'degree-advanced' || courseKey === 'voc-tech') ? `<button class="btn btn-ghost" onclick="slCopyFromRegular('${type}','${courseKey}')">${ICON.set || ''} 학위과정 설정 그대로 가져오기</button>` : ''}
       </div>
       <div id="slRulePanel">${slRuleOpen ? slRulePanelHtml() : ''}</div>
       <div class="panel la-group">
