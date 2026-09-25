@@ -1527,6 +1527,7 @@ async function runRoadmapAnalyze(courseKey) {
       curriculumRows = res.courses.map(c => ({
         name: c.name, gwan: c.gwan, semester: c.semester, category: '',
         credit: c.credit, theory: '', practice: '',
+        ncsHours: c.ncsHours, semTotal: c.semTotal,
       }));
       refreshRows();
       renderVocTechResult(courseKey, res);
@@ -1790,9 +1791,153 @@ function downloadFile(name, content) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1500);
 }
 
+/* ---------- 검수 엔진(전문기술과정 · 시간 기준) ------------------------ */
+function runVocTechCheck(courseKey) {
+  const rows = curriculumRows
+    .map(r => ({
+      name: (r.name || '').trim(), gwan: r.gwan || '',
+      semester: String(r.semester || ''),
+      ncsHours: (r.ncsHours !== '' && r.ncsHours != null && !isNaN(+r.ncsHours)) ? +r.ncsHours : 0,
+      semTotal: (r.semTotal !== '' && r.semTotal != null && !isNaN(+r.semTotal)) ? +r.semTotal : (+r.credit || 0),
+    }))
+    .filter(r => r.name);
+  if (!rows.length) { toast('검수할 교과목을 1개 이상 입력하세요.'); return; }
+
+  const spec = Store.getSpec(courseKey);           // { standards, checklist } — 트랙(1,200h/600h)별 시간 기준
+  const std = spec.standards, cl = spec.checklist;
+
+  // 동일 교과목명을 하나로 묶어 편성시간을 합산하고, 편성된 학기 목록을 추적(분할편성 검사용)
+  const byName = {};
+  rows.forEach(r => {
+    if (!byName[r.name]) byName[r.name] = { name: r.name, gwan: r.gwan, ncsHours: 0, semTotal: 0, sems: new Set() };
+    const c = byName[r.name];
+    c.ncsHours = Math.max(c.ncsHours, r.ncsHours);      // NCS적용시간은 교과목 고정값(중복 합산 방지)
+    c.semTotal += r.semTotal;
+    if (r.semester) c.sems.add(r.semester);
+  });
+  const courses = Object.values(byName);
+
+  const totalHours = courses.reduce((s, c) => s + c.semTotal, 0);
+  const majorHours = courses.filter(c => c.gwan === '계열공통' || c.gwan === '특화전공').reduce((s, c) => s + c.semTotal, 0);
+  const majorRatio = totalHours ? Math.round(majorHours / totalHours * 1000) / 10 : 0;
+  const liberalCourses = courses.filter(c => c.gwan === '교양교과');
+  const liberalHours = liberalCourses.reduce((s, c) => s + c.semTotal, 0);
+  // 이론:실습 비율 — 이론=교양교과+기초기술교과, 실습=계열공통+특화전공(=majorHours) 시간의 합으로 산정
+  const baseTechHours = courses.filter(c => c.gwan === '기초기술').reduce((s, c) => s + c.semTotal, 0);
+  const theoryHours = liberalHours + baseTechHours;
+  const practiceHours = majorHours;
+  const theoryPracticeTotal = theoryHours + practiceHours;
+  const theoryRatioCalc = theoryPracticeTotal ? Math.round(theoryHours / theoryPracticeTotal * 1000) / 10 : 0;
+  const practiceRatioCalc = theoryPracticeTotal ? Math.round(practiceHours / theoryPracticeTotal * 1000) / 10 : 0;
+  const hasJikupSahoe = liberalCourses.some(c => c.name.includes('직업과사회'));
+  const hasGeongang = liberalCourses.some(c => c.name.includes('건강과능력개발'));
+  const seriesCommonHours = courses.filter(c => c.gwan === '계열공통').reduce((s, c) => s + c.semTotal, 0);
+  const seriesCommonRatio = totalHours ? Math.round(seriesCommonHours / totalHours * 1000) / 10 : 0;
+  const projectCourses = courses.filter(c => /프로젝트\s*실습/.test(c.name));
+  const projectHours = projectCourses.reduce((s, c) => s + c.semTotal, 0);
+  const projectRatio = totalHours ? Math.round(projectHours / totalHours * 1000) / 10 : 0;
+  const capstoneCourse = courses.find(c => /종합실습/.test(c.name));
+  const safetyCourse = courses.find(c => /산업\s*안전/.test(c.name));
+  const aiAppliedCourse = courses.find(c => /AI/i.test(c.name) && /활용|적용/.test(c.name));
+  const industrialAiCourse = courses.find(c => /산업\s*AI/i.test(c.name));
+  const overMaxCourses = courses.filter(c => (c.semTotal - c.ncsHours) > (std.courseHoursMax || Infinity));
+  const splitCourses = courses.filter(c => c.sems.size > 1 && !std.splitAllowed);
+
+  const checks = [];
+  const add = (ok, title, val, req, detail = '') => checks.push({ ok, title, val, req, detail });
+
+  if (cl.c_totalHours) add(totalHours === std.totalHours, '총 운영시간', totalHours + 'h', std.totalHours + 'h',
+      totalHours !== std.totalHours ? `실제 편성 ${totalHours}h (기준 ${std.totalHours}h)` : '');
+  if (cl.c_ratio) {
+    const practiceOk = practiceRatioCalc >= (std.practiceRatio - std.ratioTolerance) && practiceRatioCalc <= (std.practiceRatio + std.ratioTolerance);
+    add(practiceOk, '이론:실습 비율', `이론 ${theoryRatioCalc}% : 실습 ${practiceRatioCalc}% (이론${theoryHours}h/실습${practiceHours}h)`,
+        `실습 ${std.practiceRatio - std.ratioTolerance}~${std.practiceRatio + std.ratioTolerance}% (이론=교양교과+기초기술, 실습=계열공통+특화전공)`,
+        practiceOk ? '' : `실습 비율이 기준 범위를 벗어났습니다 (실제 ${practiceRatioCalc}%).`);
+  }
+  if (cl.c_major) add(majorRatio >= std.majorRatioMin, '전공교과(계열공통+특화전공) 비율', majorRatio + '%', `≥ ${std.majorRatioMin}%`,
+      majorRatio < std.majorRatioMin ? `전공교과 ${majorHours}h / 총 ${totalHours}h` : '');
+  if (cl.c_courseMax) add(overMaxCourses.length === 0, '과목당 편성시간(NCS 제외)', overMaxCourses.length + '개 과목 초과', `≤ ${std.courseHoursMax}h`,
+      overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
+  if (cl.c_split) add(splitCourses.length === 0, '1개 교과 2개 학기 분할 편성 금지', splitCourses.length + '개 과목 위반', '분할 편성 금지',
+      splitCourses.length ? `분할 편성된 과목: ${splitCourses.map(c => c.name).join(', ')}` : '');
+  if (cl.c_liberal) add(liberalHours >= std.liberalHours && hasJikupSahoe && hasGeongang,
+      '교양교과 편성시간·필수교과', `${liberalHours}h / 직업과사회 ${hasJikupSahoe ? 'O' : 'X'} / 건강과능력개발 ${hasGeongang ? 'O' : 'X'}`,
+      `≥ ${std.liberalHours}h (직업과사회+건강과능력개발 필수 포함)`,
+      (!hasJikupSahoe || !hasGeongang) ? '필수 교양교과 미편성' : (liberalHours < std.liberalHours ? '교양교과 총 편성시간 부족' : ''));
+  if (cl.c_seriesCommon) add(seriesCommonRatio >= std.seriesCommonRatioMin && seriesCommonRatio <= std.seriesCommonRatioMax,
+      '계열공통교과 비율', seriesCommonRatio + '%', `${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
+      `계열공통 ${seriesCommonHours}h / 총 ${totalHours}h`);
+  if (cl.c_project) add(projectRatio >= std.projectRatioMin && projectRatio <= std.projectRatioMax,
+      '프로젝트실습 비율', projectRatio + '%', `${std.projectRatioMin}~${std.projectRatioMax}%`,
+      projectCourses.length ? `해당 교과: ${projectCourses.map(c => c.name).join(', ')}` : '「프로젝트실습」 포함 교과명을 찾지 못했습니다.');
+  if (cl.c_capstone) add(!!capstoneCourse && capstoneCourse.semTotal >= std.capstoneHours, '종합실습 편성시간',
+      capstoneCourse ? capstoneCourse.semTotal + 'h' : '미편성', `≥ ${std.capstoneHours}h`,
+      !capstoneCourse ? '「종합실습」 교과를 찾지 못했습니다.' : '');
+  if (cl.c_safety) add(!!safetyCourse && safetyCourse.semTotal >= (std.safetyHours || 0), '산업안전교과 편성', safetyCourse ? `${safetyCourse.semTotal}h(${[...safetyCourse.sems].join(',') || '-'}학기)` : '미편성', `≥ ${std.safetyHours || 16}h, 2학기만 허용`,
+      !safetyCourse ? '「산업안전」 교과를 찾지 못했습니다.' : (safetyCourse.sems.has('1') ? '1학기 편성은 허용되지 않습니다.' : ''));
+  if (cl.c_aiApplied) add(!!aiAppliedCourse && aiAppliedCourse.semTotal >= (std.aiAppliedHours || 0), 'AI활용교과 편성시간',
+      aiAppliedCourse ? aiAppliedCourse.semTotal + 'h' : '미편성', `≥ ${std.aiAppliedHours || 20}h`,
+      !aiAppliedCourse ? 'AI활용 관련 교과를 찾지 못했습니다.' : '');
+  if (cl.c_industrialAi) add(!!industrialAiCourse && industrialAiCourse.semTotal >= (std.industrialAiHoursMin || 0) && industrialAiCourse.semTotal <= (std.industrialAiHoursMax || Infinity),
+      '산업AI교과 편성시간', industrialAiCourse ? industrialAiCourse.semTotal + 'h' : '미편성', `${std.industrialAiHoursMin || 20}~${std.industrialAiHoursMax || 40}h`,
+      !industrialAiCourse ? '「산업AI」 교과를 찾지 못했습니다.' : '');
+
+  renderCheckResult(courseKey, checks);
+}
+
+function renderCheckResult(courseKey, checks) {
+  const passCount = checks.filter(c => c.ok).length;
+  const allPass = passCount === checks.length;
+  const rate = checks.length ? Math.round(passCount / checks.length * 100) : 0;
+  const courseName = (findCourse(courseKey) || {}).course ? findCourse(courseKey).course.name : courseKey;
+  lastCheck = { checks, allPass, passCount, courseName, courseKey, info: lastDocInfo };
+
+  $('#resultArea').innerHTML = `
+    <div class="panel-head" style="border:0;padding:8px 0 14px">
+      <h2>검수 결과</h2>
+      <span class="desc">적합 ${passCount}/${checks.length} 항목 (${rate}%)</span>
+    </div>
+
+    <div class="result-banner ${allPass ? 'pass' : 'fail'}">
+      <div class="rb-ico">${allPass ? ICON.big_ok : ICON.big_no}</div>
+      <div>
+        <h3>${allPass ? '교과편성 기준에 적합합니다' : '일부 기준에 부적합합니다'}</h3>
+        <p>${allPass ? '설정된 모든 세부기준을 충족했습니다.' : `${checks.length - passCount}개 항목이 기준을 충족하지 못했습니다.`}</p>
+      </div>
+      <div class="score"><b>${passCount}/${checks.length}</b><span>적합 항목 (${rate}%)</span></div>
+    </div>
+
+    <div class="panel" style="overflow-x:auto">
+      <table class="vtable">
+        <thead><tr>
+          <th style="width:52px">순번</th><th>검수항목</th><th>값</th><th>검수기준</th><th style="width:84px">검수결과</th>
+        </tr></thead>
+        <tbody>
+          ${checks.map((c, i) => `<tr class="${c.ok ? '' : 'no'}">
+            <td>${i + 1}</td>
+            <td class="vt-item">${esc(c.title)}${(!c.ok && c.detail) ? `<div class="vt-note">${esc(c.detail)}</div>` : ''}</td>
+            <td>${esc(c.val)}</td>
+            <td>${esc(c.req)}</td>
+            <td class="${c.ok ? 'vt-y' : 'vt-n'}">${c.ok ? 'Y' : 'N'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="toolbar" style="margin:16px 0 4px">
+      <button class="btn btn-soft" onclick="saveCheckResultToHistory('${courseKey}')">${ICON.check} 검수결과 저장</button>
+      <button class="btn btn-soft" onclick="saveCheckResult('${courseKey}')">${ICON.upload} 검수결과 저장(CSV)</button>
+      <button class="btn btn-primary" onclick="openPrintPreview('${courseKey}')">${ICON.book} 검수결과 출력하기</button>
+      <span style="font-size:12.5px;color:var(--c-text-soft)">미리보기 후 PDF 저장 / 프린터 인쇄 · 검수결과 저장은 이 프로그램의 <a href="#/history">검수내역</a>에 누적됩니다</span>
+    </div>`;
+
+  $('#resultArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 /* ---------- 검수 엔진 -------------------------------------------------- */
 function runCheck(courseKey) {
   syncRowsFromDom();
+  if (courseKey === 'voc-tech') { runVocTechCheck(courseKey); return; }
   const std = Store.get(courseKey);
   const rows = curriculumRows
     .map(r => ({
@@ -1962,7 +2107,7 @@ function runCheck(courseKey) {
   });
 
   // 교양필수교과 검수 — 교양교과 설정(LiberalArtsStore)에 저장된 역량군별 필수교과 목록 기준으로 대조 (검수기준은 LiberalCheckRuleStore에서 사용자가 변경 가능)
-  if (LiberalArtsStore.isSet(courseKey)) {
+  if (courseKey !== 'voc-tech' && LiberalArtsStore.isSet(courseKey)) {
     const la = LiberalArtsStore.get(courseKey);
     const rule = LiberalCheckRuleStore.get(courseKey);
     const norm = (s) => (s || '').replace(/\s+/g, '');
