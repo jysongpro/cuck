@@ -761,7 +761,7 @@ function renderSpecStandards(courseKey, found) {
             <div>특정 교과목의 편성 여부를 검수 항목으로 추가합니다. (예: <b>AI와윤리</b> 교과) <b>적용</b>으로 켠 항목만 검수에 반영됩니다.</div></div>
           <div class="panel"><div class="panel-body">
             <div class="rule-table">
-              <div class="rule-head"><span>순번</span><span>검수항목명</span><span>교과목 키워드</span><span>교과구분</span><span>학기</span><span>최소학점</span><span>최대학점</span><span>편성여부</span><span>그룹명</span><span>그룹조건</span><span>적용조건</span><span>적용</span><span></span></div>
+              <div class="rule-head"><span>순번</span><span>검수항목명</span><span>교과목 키워드</span><span>교과구분</span><span>학기</span><span>${courseKey === 'voc-tech' ? '최소시간' : '최소학점'}</span><span>${courseKey === 'voc-tech' ? '최대시간' : '최대학점'}</span><span>편성여부</span><span>그룹명</span><span>그룹조건</span><span>적용조건</span><span>적용</span><span></span></div>
               <div id="ruleRows">${rulesHtml}</div>
             </div>
             <div class="toolbar" style="margin-top:14px">
@@ -1283,14 +1283,21 @@ function ruleRowHtml(r, i) {
       <input type="text" data-i="${i}" data-k="keyword" value="${esc(r.keyword || '')}" placeholder="예: AI와윤리">
       <select data-i="${i}" data-k="gubun">
         <option value="" ${!r.gubun ? 'selected' : ''}>전체</option>
+        ${courseRulesKey === 'voc-tech' ? `
+        <option value="교양교과" ${r.gubun === '교양교과' ? 'selected' : ''}>교양교과</option>
+        <option value="기초기술교과" ${r.gubun === '기초기술교과' ? 'selected' : ''}>기초기술교과</option>
+        <option value="계열공통교과" ${r.gubun === '계열공통교과' ? 'selected' : ''}>계열공통교과</option>
+        <option value="특화전공교과" ${r.gubun === '특화전공교과' ? 'selected' : ''}>특화전공교과</option>
+        ` : `
         <option value="전공필수" ${r.gubun === '전공필수' ? 'selected' : ''}>전공필수</option>
         <option value="전공선택" ${r.gubun === '전공선택' ? 'selected' : ''}>전공선택</option>
         <option value="교양필수" ${r.gubun === '교양필수' ? 'selected' : ''}>교양필수</option>
         <option value="교양선택" ${r.gubun === '교양선택' ? 'selected' : ''}>교양선택</option>
+        `}
       </select>
       <input type="text" data-i="${i}" data-k="semester" value="${esc(r.semester || '')}" placeholder="학기(예: 3 또는 학년-학기형식 2-1)" title="편성 학기 조건. 순차 학기번호(1,2,3…) 또는 학년-학기 표기(예: 2-1 = 2학년 1학기, 순차 3학기와 동일). 쉼표(,)로 OR 연결. 비우면 전체 학기 대상.">
-      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMin" value="${esc(r.creditMin || '')}" placeholder="최소">
-      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMax" value="${esc(r.creditMax || '')}" placeholder="최대">
+      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMin" value="${esc(r.creditMin || '')}" placeholder="${courseRulesKey === 'voc-tech' ? '최소시간' : '최소'}">
+      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMax" value="${esc(r.creditMax || '')}" placeholder="${courseRulesKey === 'voc-tech' ? '최대시간' : '최대'}">
       <select data-i="${i}" data-k="presence">
         <option value="Y" ${presence === 'Y' ? 'selected' : ''}>편성(Y)</option>
         <option value="N" ${presence === 'N' ? 'selected' : ''}>미편성(N)</option>
@@ -1803,9 +1810,14 @@ function runCheck(courseKey) {
     }
     const gubun = (r.gubun || '').trim();
     let pool = rows;
-    if (gubun && GUBUN_MAP[gubun]) {
-      const [g, cat] = GUBUN_MAP[gubun];
-      pool = rows.filter(c => (c.gwan || '').trim() === g && (c.category || '').trim() === cat);
+    if (gubun) {
+      if (courseKey === 'voc-tech') {
+        // 직업교육과정: 교양교과/기초기술교과/계열공통교과/특화전공교과 — 단일 구분값을 gwan에 직접 매칭
+        pool = rows.filter(c => (c.gwan || '').trim() === gubun);
+      } else if (GUBUN_MAP[gubun]) {
+        const [g, cat] = GUBUN_MAP[gubun];
+        pool = rows.filter(c => (c.gwan || '').trim() === g && (c.category || '').trim() === cat);
+      }
     }
     const semSet = parseSemSpec(r.semester);
     if (semSet) pool = pool.filter(c => semSet.has(Number(c.semester)));
