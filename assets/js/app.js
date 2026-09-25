@@ -468,7 +468,7 @@ window.addEventListener('hashchange', router);
 window.addEventListener('DOMContentLoaded', () => {
   // 상단바 텍스트 채우기
   $('#brandTitle').textContent = '한국폴리텍대학';
-  $('#brandSub').textContent = '교과과정 개편 세부기준 검수 프로그램';
+  $('#brandSub').textContent = '교과과정개편 세부기준 검수 지원 도구';
   updateAdminBadge();
   router();
 });
@@ -490,10 +490,10 @@ function renderHome() {
         <div class="home-hero">
           <div class="home-copy">
             <span class="badge">● AI 기반 교과편성 검수 시스템</span>
-            <h1 class="home-title">${esc(APP_META.name).replace('교과과정 개편 세부기준', '교과과정개편<br><span class="accent">세부기준</span>')}</h1>
+            <h1 class="home-title">${esc(APP_META.name).replace('교과과정개편 세부기준 검수 지원 도구', '교과과정개편<br><span class="accent">세부기준</span> 검수 지원 도구')}</h1>
 
-            <p class="home-sub">운영과정별 교과편성 기준을 설정하고, 실제 커리큘럼이 기준에 부합하는지
-              자동으로 검수합니다. 교과편성 담당 교수님을 위한 도구입니다.</p>
+            <p class="home-sub">2027학년도 운영과정별 교과편성 기준을 설정하고, 실제 커리큘럼이 기준에 부합하는지
+              자동으로 검수합니다.</p>
 
             <div class="menu-cards">
               <button class="menu-card" onclick="navigate('cat/degree')">
@@ -533,10 +533,10 @@ function renderHome() {
         <div class="prog-info">
           <b>${esc(APP_META.name)}</b><br>
           개발버전 <b>${esc(APP_META.version)}</b><br>
-          개발 · <b>${esc(APP_META.developer)}</b>
-        </div>
-        <div class="copyright" style="margin-top:10px;font-size:11px;color:rgba(255,255,255,.55)">
-          © ${new Date().getFullYear()} 학교법인 한국폴리텍. All rights reserved.
+          개발 · <b>${esc(APP_META.developer)}</b><br>
+          <div class="copyright" style="margin-top:10px;font-size:11px;color:rgba(255,255,255,.55)">
+            © ${new Date().getFullYear()} 학교법인 한국폴리텍. All rights reserved.
+          </div>
         </div>
       </div>
     </section>`;
@@ -788,20 +788,39 @@ function stdTab(name) {
 
 /* 커리큘럼 체크리스트 = 세부기준 설정 + 교과목 편성기준을 합한 실제 검수 항목 목록 */
 function buildCriteriaList(courseKey) {
-  const std = Store.get(courseKey);
   const items = [];
   const add = (title, req) => items.push({ title, req, src: '세부기준' });
 
-  add('총 편성학점', `${std.totalCreditsMin}~${std.totalCreditsMax}학점`);
-  add('운영 학기 수', `${std.semesters}학기`);
-  add('학기당편성학점', `학기당 ${std.creditsPerSemMin}~${std.creditsPerSemMax}학점`);
-  add('교과목당 학점', `과목당 ${std.courseCreditMin}~${std.courseCreditMax}학점`);
-  add('실습편성비율', `최소 ${std.practiceRatioMin}%`);
-  if (std.requiredRatioMin > 0) add('필수과목 비율', `최소 ${std.requiredRatioMin}%`);
-  if (std.majorReqMin > 0 || std.majorReqMax > 0) add('전공필수 편성학점', std.majorReqMax > 0 ? `${std.majorReqMin}~${std.majorReqMax}학점` : `최소 ${std.majorReqMin}학점`);
-  if (std.majorOfferMin > 0 || std.majorOfferMax > 0) add('전공선택교과 편성학점', `${std.majorOfferMin}~${std.majorOfferMax}학점`);
-  if (std.fieldTraining) add('현장실습 포함', '필수 포함');
-  if (std.capstone) add('캡스톤(졸업작품) 포함', '필수 포함');
+  const rawSpec0 = COURSE_SPECS[courseKey];
+  if (rawSpec0 && rawSpec0.durationTracks) {
+    // ── 시간총량 기반 과정(전문기술과정 등) — 학위과정(학점 기반)과 별개 체크리스트 ──
+    const s = Store.getSpec(courseKey).standards;
+    const trackLabel = (rawSpec0.durationTracks[VocTrackStore.get(courseKey)] || {}).trackLabel || '';
+    add('총 운영시간', `${s.totalHours}시간(${trackLabel}, ${s.semesters}학기)`);
+    add('이론:실습 비율', `이론 ${s.theoryRatio}% : 실습 ${s.practiceRatio}%(허용오차 ±${s.ratioTolerance}%p)`);
+    add('전공교과 비율', `${s.majorRatioMin}% 이상`);
+    add('과목당 편성시간', `${s.courseHoursMax}시간 이내(NCS 교과 제외)`);
+    add('1개 교과 2학기 분할 편성', s.splitAllowed ? '허용' : '미허용');
+    add('교양교과 편성시간', `${s.liberalHours}시간 이상(직업과사회 ${s.liberalJobSocietyH}h 이상 + 건강과능력개발 ${s.liberalHealthH}h 이상 포함)`);
+    add('계열공통교과 비율', `${s.seriesCommonRatioMin}~${s.seriesCommonRatioMax}%`);
+    add('프로젝트실습 비율', `${s.projectRatioMin}~${s.projectRatioMax}%`);
+    add('종합실습 편성시간', `${s.capstoneHours}시간 이상`);
+    add('산업안전교과 편성시간', `${s.safetyHours}시간 이상`);
+    add('AI활용교과 편성시간', `${s.aiAppliedHours}시간 이상`);
+    add('산업AI교과 편성시간', `${s.industrialAiHoursMin}~${s.industrialAiHoursMax}시간`);
+  } else {
+    const std = Store.get(courseKey);
+    add('총 편성학점', `${std.totalCreditsMin}~${std.totalCreditsMax}학점`);
+    add('운영 학기 수', `${std.semesters}학기`);
+    add('학기당편성학점', `학기당 ${std.creditsPerSemMin}~${std.creditsPerSemMax}학점`);
+    add('교과목당 학점', `과목당 ${std.courseCreditMin}~${std.courseCreditMax}학점`);
+    add('실습편성비율', `최소 ${std.practiceRatioMin}%`);
+    if (std.requiredRatioMin > 0) add('필수과목 비율', `최소 ${std.requiredRatioMin}%`);
+    if (std.majorReqMin > 0 || std.majorReqMax > 0) add('전공필수 편성학점', std.majorReqMax > 0 ? `${std.majorReqMin}~${std.majorReqMax}학점` : `최소 ${std.majorReqMin}학점`);
+    if (std.majorOfferMin > 0 || std.majorOfferMax > 0) add('전공선택교과 편성학점', `${std.majorOfferMin}~${std.majorOfferMax}학점`);
+    if (std.fieldTraining) add('현장실습 포함', '필수 포함');
+    if (std.capstone) add('캡스톤(졸업작품) 포함', '필수 포함');
+  }
 
   const ruleItemsRaw = [];
   CourseRuleStore.get(courseKey).forEach(r => {
@@ -2055,8 +2074,8 @@ function renderHistory() {
       ${isAdmin() ? `<td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>` : ''}
       <td>${i + 1}</td>
       <td class="l">${esc(r.info.과정 || r.courseName)}</td>
-      <td>${esc(historyTrackLabel(r))}</td>
-      <td class="l">${isAdmin() ? `<input type="text" class="hist-inline-input" data-id="${r.id}" data-field="대학" value="${esc(r.info.대학 || '')}" placeholder="대학명" onchange="updateHistoryField('${r.id}','대학',this.value)">` : esc(r.info.대학 || '-')}</td>
+      ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
+      <td class="l">${esc(r.info.대학 || '-')}</td>
       <td>${esc(r.info.캠퍼스 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
       <td>${esc(r.info.전공 || '-')}</td>
@@ -2116,7 +2135,6 @@ function renderHistory() {
           <button class="btn btn-ghost btn-sm" onclick="toggleAllHistory(this)">전체 선택/해제</button>
           <button class="btn btn-danger btn-sm" onclick="deleteHistorySelected()">${ICON.no} 선택 삭제</button>
           <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel()">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
-          <button class="btn btn-soft btn-sm" onclick="remapAllHistoryUniv()" title="저장된 모든 항목의 캠퍼스명을 기준으로 대학 정보를 자동으로 다시 채웁니다">${ICON.set || ''} 대학 자동매핑</button>
           <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·과정평가형·비고는 표에서 직접 입력·수정할 수 있습니다.</span>
         </div>` : `
         <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
@@ -2124,7 +2142,7 @@ function renderHistory() {
         <div class="panel" style="overflow-x:auto">
           <table class="vtable">
             <thead><tr>
-              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th><th style="width:100px">구분(시간)</th><th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
+              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th>${historyFilter.cat === 'vocational' ? '<th style="width:100px">구분(시간)</th>' : ''}<th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
               <th style="width:80px">과정평가형</th><th>저장일시</th><th style="width:70px">판정</th><th style="width:70px">충족률</th><th style="width:150px">비고</th><th style="width:130px">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2148,23 +2166,6 @@ function updateHistoryField(id, field, value) {
     HistoryStore.update(id, { [field]: value });
   }
 }
-/* 검수내역에 저장된 모든 항목의 캠퍼스명을 기준으로 대학 컬럼을 일괄 재매핑 */
-function remapAllHistoryUniv() {
-  if (!isAdmin()) { toast('이 기능은 관리자만 이용할 수 있습니다.'); return; }
-  const list = HistoryStore.all();
-  if (!list.length) { toast('저장된 검수내역이 없습니다.'); return; }
-  let updated = 0;
-  list.forEach(r => {
-    const found = lookupUnivByCampus(r.info && r.info.캠퍼스);
-    if (found && (!r.info.대학 || r.info.대학 !== found)) {
-      r.info = { ...r.info, 대학: found };
-      updated++;
-    }
-  });
-  HistoryStore.save(list);
-  toast(`캠퍼스명을 기준으로 대학 정보를 매핑했습니다. (${updated}건 갱신)`);
-  renderHistory();
-}
 
 /* 검수내역 전체 목록을 엑셀(.xls, HTML 표 기반 — 별도 라이브러리 없이 오프라인에서도 엑셀로 정상 열림)로 내보낸다 */
 function exportHistoryToExcel() {
@@ -2172,12 +2173,14 @@ function exportHistoryToExcel() {
   const tabKey = historyFilter.cat || Object.keys(PROGRAM_TREE)[0];
   const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
   if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
-  const headers = ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
+  const headers = historyFilter.cat === 'vocational'
+    ? ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고']
+    : ['순번', '과정', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
       i + 1,
       r.info.과정 || r.courseName || '',
-      historyTrackLabel(r),
+      ...(tabKey === 'vocational' ? [historyTrackLabel(r)] : []),
       r.info.대학 || '',
       r.info.캠퍼스 || '',
       r.info.학과 || '',
@@ -2422,6 +2425,6 @@ Object.assign(window, {
   slToggleRulePanel, slSaveRule, slResetRule,
   toggleAllHistory, deleteHistoryOne, deleteHistorySelected,
   exportAllData, importAllData,
-  updateHistoryField, exportHistoryToExcel, remapAllHistoryUniv,
+  updateHistoryField, exportHistoryToExcel,
 });
 
