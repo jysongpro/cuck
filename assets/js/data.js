@@ -178,8 +178,6 @@ const COURSE_SPECS = {
             title: '교양·계열공통 교과',
             fields: [
               { key: 'liberalHours',       label: '교양교과편성시간 이상',        unit: '시간', def: 34, note: '직업과사회 17h + 건강과능력개발 17h 필수 포함' },
-              { key: 'liberalJobSocietyH', label: '직업과사회 편성시간 이상',     unit: '시간', def: 17, note: '필수' },
-              { key: 'liberalHealthH',     label: '건강과능력개발 편성시간 이상', unit: '시간', def: 17, note: '필수' },
               { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소)', unit: '%', def: 10 },
               { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대)', unit: '%', def: 20 },
             ],
@@ -242,8 +240,6 @@ const COURSE_SPECS = {
             title: '교양·계열공통 교과',
             fields: [
               { key: 'liberalHours',       label: '교양교과편성시간 이상',        unit: '시간', def: 34, note: '직업과사회 17h + 건강과능력개발 17h 필수 포함' },
-              { key: 'liberalJobSocietyH', label: '직업과사회 편성시간 이상',     unit: '시간', def: 17, note: '필수' },
-              { key: 'liberalHealthH',     label: '건강과능력개발 편성시간 이상', unit: '시간', def: 17, note: '필수' },
               { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소)', unit: '%', def: 10 },
               { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대)', unit: '%', def: 20 },
             ],
@@ -420,7 +416,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정개편 세부기준 검수 지원 도구',
-  version: '1.6.6',
+  version: '1.6.7',
   developer: '학교법인 한국폴리텍대학 AI혁신부',
 };
 

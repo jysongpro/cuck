@@ -801,7 +801,7 @@ function buildCriteriaList(courseKey) {
     add('전공교과 비율', `${s.majorRatioMin}% 이상`);
     add('과목당 편성시간', `${s.courseHoursMax}시간 이내(NCS 교과 제외)`);
     add('1개 교과 2학기 분할 편성', s.splitAllowed ? '허용' : '미허용');
-    add('교양교과 편성시간', `${s.liberalHours}시간 이상(직업과사회 ${s.liberalJobSocietyH}h 이상 + 건강과능력개발 ${s.liberalHealthH}h 이상 포함)`);
+    add('교양교과 편성시간', `${s.liberalHours}시간 이상`);
     add('계열공통교과 비율', `${s.seriesCommonRatioMin}~${s.seriesCommonRatioMax}%`);
     add('프로젝트실습 비율', `${s.projectRatioMin}~${s.projectRatioMax}%`);
     add('종합실습 편성시간', `${s.capstoneHours}시간 이상`);
@@ -854,7 +854,7 @@ function buildCriteriaList(courseKey) {
     const laRule = LiberalCheckRuleStore.get(courseKey);
     if (laRule.checkOffered) items.push({ title: '교양필수교과 편성 여부(역량군별)', req: '설정된 필수교과가 역량군별로 모두 편성', src: '교양교과설정' });
     if (laRule.checkMaxPerGroup) items.push({ title: '교양필수교과 역량군당 편성 수', req: `역량군당 최대 ${laRule.maxPerGroup}과목`, src: '교양교과설정' });
-    if (laRule.checkTotal) items.push({ title: '교양필수교과 총 편성 역량군수/학점', req: `${laRule.targetGroupCount}개 역량군 · ${laRule.targetTotalCredit}학점`, src: '교양교과설정' });
+    if (laRule.checkTotal) items.push({ title: `교양필수교과 총 편성 역량군수/${courseKey === 'voc-tech' ? '시간' : '학점'}`, req: `${laRule.targetGroupCount}개 역량군 · ${laRule.targetTotalCredit}${courseKey === 'voc-tech' ? '시간' : '학점'}`, src: '교양교과설정' });
   }
 
   // 산업안전·산업AI·AI활용 교과편성 확인 — 등록된 경우에만 미리보기에 노출
@@ -976,7 +976,7 @@ function laRulePanelHtml() {
         <label class="switch"><input type="checkbox" id="laR_checkTotal" ${r.checkTotal ? 'checked' : ''}><span class="track"></span><span class="switch-label">적용</span></label>
         <span class="la-rule-label">총 편성 역량군수/학점 검수 · 목표</span>
         <input type="number" min="0" step="1" id="laR_targetGroupCount" value="${esc(r.targetGroupCount)}" style="width:70px"> 역량군 ·
-        <input type="number" min="0" step="1" id="laR_targetTotalCredit" value="${esc(r.targetTotalCredit)}" style="width:70px"> 학점
+        <input type="number" min="0" step="1" id="laR_targetTotalCredit" value="${esc(r.targetTotalCredit)}" style="width:70px"> ${laCourseKey === 'voc-tech' ? '시간' : '학점'}
       </div>
       <div class="toolbar" style="margin-top:12px">
         <button class="btn btn-primary btn-sm" onclick="laSaveRule('${laCourseKey}')">${ICON.ok} 검수기준 저장</button>
@@ -1017,10 +1017,11 @@ function laResetRule(courseKey) {
 }
 
 function laRowHtml(g, type, row, idx) {
+  const unitLabel = laCourseKey === 'voc-tech' ? '시간' : '학점';
   return `
     <div class="la-row">
       <input type="text" data-g="${g.key}" data-t="${type}" data-i="${idx}" data-k="name" value="${esc(row.name || '')}" placeholder="교과명">
-      <input type="number" min="0" step="1" data-g="${g.key}" data-t="${type}" data-i="${idx}" data-k="credit" value="${esc(row.credit || '')}" placeholder="학점">
+      <input type="number" min="0" step="1" data-g="${g.key}" data-t="${type}" data-i="${idx}" data-k="credit" value="${esc(row.credit || '')}" placeholder="${unitLabel}">
       <button type="button" class="del-row" onclick="laDelRow('${g.key}','${type}',${idx})" title="삭제">×</button>
     </div>`;
 }
