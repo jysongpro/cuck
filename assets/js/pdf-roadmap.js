@@ -553,9 +553,8 @@ function vocReadCounts(r, bounds) {
   const sem2Str = vocRowText(r, b.SEM2).trim();
   const sem3Str = b.SEM3 ? vocRowText(r, b.SEM3).trim() : '';
   const sem1 = isNumStr(sem1Str) ? Number(sem1Str) : 0;
-  const sem3Raw = isNumStr(sem3Str) ? Number(sem3Str) : 0;   // 3학기 원본값(1200h 트랙 3학기 운영 여부 판단용, 병합 전)
-  // 3학기 표(10개월 과정 등)가 있는 경우, 3학기 편성시간은 2학기 값에 합산해 반영한다(화면은 1·2학기 2열만 지원).
-  const sem2 = (isNumStr(sem2Str) ? Number(sem2Str) : 0) + sem3Raw;
+  const sem2 = isNumStr(sem2Str) ? Number(sem2Str) : 0;
+  const sem3 = isNumStr(sem3Str) ? Number(sem3Str) : 0;   // 3학기 편성시간 — 화면/집계 모두 0이라도 별도 컬럼으로 그대로 표시(병합하지 않음)
   // "편성시간(계)" 컬럼이 셀 병합/좌표 오차로 0(또는 미인식)으로 읽히는 경우, 1·2학기 값의 합으로 보정한다.
   // (실제 표에서는 계 = 1학기 + 2학기가 항상 성립하므로 안전한 대체값이다.)
   let semTotal = isNumStr(semTotalStr) ? Number(semTotalStr) : '';
@@ -564,7 +563,7 @@ function vocReadCounts(r, bounds) {
   // NCS적용시간이 편성시간(계) 컬럼과 좌표가 겹쳐 "편성시간 전체"를 그대로 복제해 읽는 오인식 방어:
   // NCS적용시간은 정의상 편성시간(계)을 초과할 수 없다. 초과하는 값이 읽히면 컬럼이 밀려 읽힌 것으로 보고 무시(빈 값)한다.
   if (ncsHours !== '' && semTotal !== '' && ncsHours > semTotal) ncsHours = '';
-  return { ncsHours, semTotal, sem1, sem2, sem3Raw };
+  return { ncsHours, semTotal, sem1, sem2, sem3 };
 }
 
 function extractVocTechCourses(items, state, groupOrder, bounds) {
@@ -579,13 +578,13 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     return { top: r.top, name, hoursStr, cnt };
   });
   const boundaries = parsed
-    .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0 }))
+    .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0, extraSem3: 0 }))
     .filter(p => p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계'));
 
   parsed.forEach(p => {
     const isBoundary = p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계');
     if (isBoundary) return;
-    const hasData = p.cnt.ncsHours !== '' || p.cnt.sem1 > 0 || p.cnt.sem2 > 0;
+    const hasData = p.cnt.ncsHours !== '' || p.cnt.sem1 > 0 || p.cnt.sem2 > 0 || p.cnt.sem3 > 0;
     if (!hasData) return;
     let best = null, bestDist = Infinity;
     boundaries.forEach(b => {
@@ -597,6 +596,7 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
       if (p.cnt.ncsHours !== '') best.extraNcs += p.cnt.ncsHours;
       best.extraSem1 += p.cnt.sem1;
       best.extraSem2 += p.cnt.sem2;
+      best.extraSem3 += p.cnt.sem3;
     }
   });
 
@@ -607,26 +607,28 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     const { name, hoursStr, cnt } = b;
     if (name === '총계') {
       const ncsHours = cnt.ncsHours !== '' ? cnt.ncsHours : (b.extraNcs || '');
-      totalRow = { label: '총계', ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2, sem3Raw: cnt.sem3Raw || 0 };
+      totalRow = { label: '총계', ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2, sem3: cnt.sem3 || b.extraSem3 };
       return;
     }
     if (name === '소계') {
       state.groupIdx++;
       const label = groupOrder[state.groupIdx] || `구분${state.groupIdx + 1}`;
       const ncsHours = cnt.ncsHours !== '' ? cnt.ncsHours : (b.extraNcs || '');
-      subtotals.push({ label, ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2 });
+      subtotals.push({ label, ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2, sem3: cnt.sem3 || b.extraSem3 });
       return;
     }
     // 실제 교과목 행: 자기 행의 값 + 능력단위 서브행에서 합산된 값을 더한다(단일 능력단위 교과는 extra가 0이라 영향 없음)
     const ncsHours = (cnt.ncsHours !== '' ? cnt.ncsHours : 0) + b.extraNcs;
     const sem1 = cnt.sem1 + b.extraSem1;
     const sem2 = cnt.sem2 + b.extraSem2;
+    const sem3 = cnt.sem3 + b.extraSem3;
     const gwan = groupOrder[state.groupIdx] || '';
     const semTotal = cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr);
     const finalNcs = ncsHours || '';
     if (sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: sem1 });
     if (sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: sem2 });
-    if (sem1 <= 0 && sem2 <= 0) courses.push({ name, gwan, semester: '', ncsHours: finalNcs, semTotal, credit: Number(hoursStr) });
+    if (sem3 > 0) courses.push({ name, gwan, semester: '3', ncsHours: finalNcs, semTotal, credit: sem3 });
+    if (sem1 <= 0 && sem2 <= 0 && sem3 <= 0) courses.push({ name, gwan, semester: '', ncsHours: finalNcs, semTotal, credit: Number(hoursStr) });
   });
   return { courses, subtotals, totalRow };
 }
@@ -679,8 +681,8 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
   // 하이테크과정 1,200시간 트랙은 "2학기제 운영"을 전제로 세부기준이 설계되어 있어, 실제로 3개 학기(10개월형 등)로
   // 운영되는 교육운영계획서는 이 트랙의 시간기준 검수 로직으로 판정할 수 없다. 총계 행의 3학기 편성시간이 실제로
   // 존재하면(0시간 초과) 검수를 진행하지 않고 명확한 안내 메시지와 함께 즉시 중단한다.
-  if (courseKey === 'voc-hitech' && trackKey === '1200' && totalRow && (totalRow.sem3Raw || 0) > 0) {
-    const err = new Error('하이테크과정 1,200시간 트랙은 2학기(1년) 운영 기준입니다. 이 교육운영계획서는 3개 학기(총 ' + (totalRow.sem3Raw) + '시간)로 편성되어 있어 검수 대상이 아닙니다. 3학기제 운영 과정은 별도 트랙/기준이 마련되기 전까지 이 화면에서 검수할 수 없습니다.');
+  if (courseKey === 'voc-hitech' && trackKey === '1200' && totalRow && (totalRow.sem3 || 0) > 0) {
+    const err = new Error('하이테크과정 1,200시간 트랙은 2학기(1년) 운영 기준입니다. 이 교육운영계획서는 3개 학기(총 ' + (totalRow.sem3) + '시간)로 편성되어 있어 검수 대상이 아닙니다. 3학기제 운영 과정은 별도 트랙/기준이 마련되기 전까지 이 화면에서 검수할 수 없습니다.');
     err.vocBlocked = true;
     throw err;
   }
@@ -689,22 +691,24 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
   // 만약 해당 구분의 소계 행을 읽어오지 못한 경우에만 안전망(fallback)으로 교과목 합계로 대체한다.
   const groups = vocGroupOrderFor(courseKey).map(label => {
     const sub = subtotalByLabel[label];
-    if (sub) return { label, hours: sub.total, ncsHours: sub.ncsHours, sem1: sub.sem1, sem2: sub.sem2 };
+    if (sub) return { label, hours: sub.total, ncsHours: sub.ncsHours, sem1: sub.sem1, sem2: sub.sem2, sem3: sub.sem3 || 0 };
     const own = courses.filter(c => c.gwan === label);
     const uniq = {};
     own.forEach(c => { const k = c.name; if (!uniq[k]) uniq[k] = c.semTotal || 0; });
     const hours = Object.values(uniq).reduce((s, v) => s + v, 0);
     const sem1 = own.filter(c => c.semester === '1').reduce((s, c) => s + (c.credit || 0), 0);
     const sem2 = own.filter(c => c.semester === '2').reduce((s, c) => s + (c.credit || 0), 0);
-    return { label, hours, ncsHours: '', sem1, sem2 };
+    const sem3 = own.filter(c => c.semester === '3').reduce((s, c) => s + (c.credit || 0), 0);
+    return { label, hours, ncsHours: '', sem1, sem2, sem3 };
   });
   const total = totalRow
-    ? { hours: totalRow.total, ncsHours: totalRow.ncsHours, sem1: totalRow.sem1, sem2: totalRow.sem2 }
+    ? { hours: totalRow.total, ncsHours: totalRow.ncsHours, sem1: totalRow.sem1, sem2: totalRow.sem2, sem3: totalRow.sem3 || 0 }
     : {
         hours: groups.reduce((s, g) => s + (g.hours || 0), 0),
         ncsHours: groups.reduce((s, g) => s + (isNumStr(String(g.ncsHours)) ? Number(g.ncsHours) : 0), 0),
         sem1: groups.reduce((s, g) => s + (g.sem1 || 0), 0),
         sem2: groups.reduce((s, g) => s + (g.sem2 || 0), 0),
+        sem3: groups.reduce((s, g) => s + (g.sem3 || 0), 0),
       };
   const summary = { groups, total: total.hours, totalInfo: total };
 

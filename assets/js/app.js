@@ -1587,28 +1587,29 @@ function renderVocTechResult(courseKey, res) {
     <td class="rc-n">${c.ncsHours !== '' && c.ncsHours != null ? c.ncsHours : '-'}</td>
     <td class="rc-n">${c.semTotal != null ? c.semTotal : '-'}</td>
     <td class="rc-n">${c.semester === '1' ? c.credit : '-'}</td>
-    <td class="rc-n">${c.semester === '2' ? c.credit : '-'}</td></tr>`;
+    <td class="rc-n">${c.semester === '2' ? c.credit : '-'}</td>
+    <td class="rc-n">${c.semester === '3' ? c.credit : '-'}</td></tr>`;
   // 총계를 맨 위에, 이후 구분별(교양교과→기초기술→계열공통→특화전공) 순으로 그룹의 첫줄에 소계를 배치하고 그 아래에 해당 교과목을 나열.
   // 소계/총계는 PDF에 이미 인쇄된 NCS적용/계/1학기/2학기 값을 그대로 사용해 표시
   const fmt = v => (v !== '' && v != null) ? v : '-';
   let bodyHtml = '';
   if (res.summary && res.summary.totalInfo) {
     const t = res.summary.totalInfo;
-    bodyHtml += `<tr class="rc-total"><td colspan="3">총계</td><td class="rc-n">${fmt(t.ncsHours)}</td><td class="rc-n">${fmt(t.hours)}</td><td class="rc-n">${fmt(t.sem1)}</td><td class="rc-n">${fmt(t.sem2)}</td></tr>`;
+    bodyHtml += `<tr class="rc-total"><td colspan="3">총계</td><td class="rc-n">${fmt(t.ncsHours)}</td><td class="rc-n">${fmt(t.hours)}</td><td class="rc-n">${fmt(t.sem1)}</td><td class="rc-n">${fmt(t.sem2)}</td><td class="rc-n">${fmt(t.sem3 != null ? t.sem3 : 0)}</td></tr>`;
   }
   let seq = 1;
   const groupOrder = res.summary ? res.summary.groups.map(g => g.label) : ['교양교과', '기초기술', '계열공통', '특화전공'];
   groupOrder.forEach(label => {
     const grp = res.summary ? res.summary.groups.find(g => g.label === label) : null;
     const groupCourses = res.courses.filter(c => c.gwan === label);
-    bodyHtml += `<tr class="rc-grp"><td colspan="3">${esc(label)} 소계</td><td class="rc-n">${grp ? fmt(grp.ncsHours) : '-'}</td><td class="rc-n">${grp ? fmt(grp.hours) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem1) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem2) : '-'}</td></tr>`;
+    bodyHtml += `<tr class="rc-grp"><td colspan="3">${esc(label)} 소계</td><td class="rc-n">${grp ? fmt(grp.ncsHours) : '-'}</td><td class="rc-n">${grp ? fmt(grp.hours) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem1) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem2) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem3 != null ? grp.sem3 : 0) : '-'}</td></tr>`;
     bodyHtml += groupCourses.map(c => rowTr(c, seq++ - 1)).join('');
   });
   const ungrouped = res.courses.filter(c => !groupOrder.includes(c.gwan));
   if (ungrouped.length) {
     bodyHtml += ungrouped.map(c => rowTr(c, seq++ - 1)).join('');
   }
-  if (res.courses.length === 0) bodyHtml += '<tr><td colspan="7" class="rc-empty">해당 교과 없음</td></tr>';
+  if (res.courses.length === 0) bodyHtml += '<tr><td colspan="8" class="rc-empty">해당 교과 없음</td></tr>';
   $('#roadmapResult').innerHTML = `
     <div class="panel-head" style="border:0;padding:18px 0 12px"><h2>교육운영계획서 정보</h2></div>
     <div class="panel info-card"><div class="info-grid">
@@ -1621,7 +1622,7 @@ function renderVocTechResult(courseKey, res) {
     </div></div>
     <div class="panel-head" style="border:0;padding:18px 0 12px">
       <h2>교과과정 보기</h2>
-      <span class="desc">${res.startPage}페이지 마.교과목구성 · 총 ${res.courses.length}개 행(NCS적용시간·편성시간 계/1학기/2학기 포함)</span>
+      <span class="desc">${res.startPage}페이지 마.교과목구성 · 총 ${res.courses.length}개 행(NCS적용시간·편성시간 계/1학기/2학기/3학기 포함)</span>
     </div>
     ${res.summary ? `
     <div class="stat-row">${res.summary.groups.map(g => `<div class="stat"><div class="s-label">${esc(g.label)}</div><div class="s-val">${g.hours}<small> 시간</small></div></div>`).join('')}
@@ -1629,7 +1630,7 @@ function renderVocTechResult(courseKey, res) {
     </div>` : ''}
     <div class="panel" style="overflow-x:auto">
       <table class="rc-table">
-        <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>NCS적용시간</th><th>편성시간(계)</th><th>편성시간(1학기)</th><th>편성시간(2학기)</th></tr></thead>
+        <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>NCS적용시간</th><th>편성시간(계)</th><th>편성시간(1학기)</th><th>편성시간(2학기)</th><th>편성시간(3학기)</th></tr></thead>
         <tbody>${bodyHtml}
         </tbody>
       </table>
