@@ -613,8 +613,10 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     // 1순위: 이름-only 교과목(다중 능력단위, 4개 미만 합산된 것), 2순위: 자기 값이 있는 교과목(구형 레이아웃)
     let { best, bestDist } = near(boundaries.filter(b => b.nameOnly && b.units < 4));
     if (!best || bestDist > 40) {
-      ({ best, bestDist } = near(boundaries.filter(b => !b.isTotal && !b.nameOnly)));
-      if (bestDist > 15) best = null;
+      // 이름이 가운데 능력단위 행에 함께 인쇄된 경우(홀수 개 능력단위: 3개 등) — 위·아래 능력단위 행은 약 15~20pt 떨어져 있다.
+      // 교과목당 최대 4개(자기 행 1 + 추가 3) 까지, 세로 30pt 이내에서 가장 가까운 교과목에 합산한다.
+      ({ best, bestDist } = near(boundaries.filter(b => !b.isTotal && !b.nameOnly && b.units < 3)));
+      if (bestDist > 30) best = null;
     }
     if (!best) return;
     best.units++;
@@ -651,7 +653,8 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     const sem3 = cnt.sem3 + b.extraSem3;
     const gwan = groupOrder[state.groupIdx] || '';
     let semTotal = cnt.semTotal !== '' ? cnt.semTotal : (isNumStr(hoursStr) ? Number(hoursStr) : 0);
-    if (b.nameOnly) semTotal = (sem1 + sem2 + sem3) || b.extraHours;   // 다중 능력단위: 능력단위 합계
+    if (b.nameOnly) semTotal = (sem1 + sem2 + sem3) || b.extraHours;   // 다중 능력단위(이름만 있는 행): 능력단위 합계
+    else if (b.units > 0) semTotal = (sem1 + sem2 + sem3) || ((semTotal || 0) + b.extraHours);   // 이름 행 자체에도 능력단위 값이 있는 경우: 자기 행 + 나머지 능력단위 합계
     const finalNcs = ncsHours || '';
     if (sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: sem1 });
     if (sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: sem2 });
@@ -659,6 +662,39 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     if (sem1 <= 0 && sem2 <= 0 && sem3 <= 0) courses.push({ name, gwan, semester: '', ncsHours: finalNcs, semTotal, credit: semTotal });
   });
   return { courses, subtotals, totalRow };
+}
+
+/* v1.9.3 — 교과목구성 표 끝 판정
+ * 표 바로 아래(같은 페이지/다음 페이지)의 다른 표·본문(예: 안전교육 내용 "원리/폭발/장비및안전…" 등)이
+ * 같은 컬럼 좌표에 걸려 교과목으로 잘못 추가되는 오류 방지.
+ * 교과목 편성시간(계) 누적합이 총계(없으면 구분별 소계 합)에 도달하면 표가 끝난 것으로 보고 그 뒤 행은 버린다. */
+function vocTableTarget(totalRow, subtotalByLabel, groupOrder) {
+  if (totalRow && Number(totalRow.total) > 0) return Number(totalRow.total);
+  const subs = groupOrder.map(g => subtotalByLabel[g]).filter(Boolean);
+  if (subs.length === groupOrder.length) return subs.reduce((a, x) => a + (Number(x.total) || 0), 0);
+  return 0;
+}
+function vocCourseCutIndex(courses, target) {
+  if (!target) return -1;
+  let sum = 0; const seen = new Set();
+  for (let i = 0; i < courses.length; i++) {
+    const c = courses[i];
+    const key = c.gwan + '|' + c.name;                // 1·2학기로 나뉜 같은 교과목은 한 번만 합산
+    if (!seen.has(key)) { seen.add(key); sum += Number(c.semTotal) || 0; }
+    if (sum >= target) {
+      let j = i;                                       // 같은 교과목의 다른 학기 행까지 포함
+      while (j + 1 < courses.length && courses[j + 1].gwan + '|' + courses[j + 1].name === key) j++;
+      return j;
+    }
+  }
+  return -1;
+}
+function vocTableComplete(courses, totalRow, subs, groupOrder) {
+  return vocCourseCutIndex(courses, vocTableTarget(totalRow, subs, groupOrder)) >= 0;
+}
+function vocTrimAfterTableEnd(courses, totalRow, subs, groupOrder) {
+  const idx = vocCourseCutIndex(courses, vocTableTarget(totalRow, subs, groupOrder));
+  return idx >= 0 ? courses.slice(0, idx + 1) : courses;
 }
 
 /* 전문기술과정 PDF 분석 진입점 — "마.교과목구성" 표를 찾아 여러 페이지에 걸쳐 교과목을 수집 */
@@ -709,7 +745,9 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
     courses = courses.concat(found.courses);
     found.subtotals.forEach(s => { subtotalByLabel[s.label] = s; });
     if (found.totalRow) totalRow = found.totalRow;
+    if (vocTableComplete(courses, totalRow, subtotalByLabel, vocGroupOrderFor(courseKey))) break;   // 표 합계 도달 → 이후 페이지 스캔 중단
   }
+  courses = vocTrimAfterTableEnd(courses, totalRow, subtotalByLabel, vocGroupOrderFor(courseKey));
   if (!courses.length) throw new Error('표는 찾았지만 교과목 데이터를 읽어오지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
 
   // 하이테크과정 1,200시간 트랙은 "2학기제 운영"을 전제로 세부기준이 설계되어 있어, 실제로 3개 학기(10개월형 등)로
