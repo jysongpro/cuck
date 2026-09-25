@@ -422,26 +422,32 @@ function vocRowText(row, range) {
 
 /* 한 페이지에서 "마.교과목구성" 표의 교과목 행을 추출 */
 /* 표 라벨(정식 4구분) → 화면 표시용 축약 라벨 */
+/* 표에 실제 인쇄된 라벨(좌: 정식 4구분 표기) → 화면에 표시할 축약 라벨(우) */
 const VOC_GWAN_DISPLAY = {
-  '교양교과': '교양교과', '기초기술교과': '기초기술교과',
+  '교양교과': '교양교과', '기초기술교과': '기초기술',
   '계열공통교과': '계열공통', '특화전공교과': '특화전공',
 };
+/* 화면 표시 축약 라벨 목록(= 소계/정렬 기준 순서) */
+const VOC_GROUP_ORDER = ['교양교과', '기초기술', '계열공통', '특화전공'];
 
 function extractVocTechCourses(items) {
   const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
-  // 1) 구분(교양교과 등) 레이블 위치 수집 — 세로 병합 셀이라 그룹 중간쯤에 한 번만 나타남
+  // 구분(교양교과 등) 레이블 위치 수집 — 세로 병합 셀이라 그룹 첫 줄에 한 번만 나타남.
+  // 요청대로 각 라벨이 "첫 줄에 잡히는" 순간의 값만으로 판단하고, 이후 줄바꿈 조각까지
+  // 이어붙여 추측하지 않는다(과도한 재구성은 오히려 오탐을 유발할 수 있음).
   const labelPos = [];
+  const seen = new Set();
   rows.forEach(r => {
     const t = despace(vocRowText(r, VOC_BOUNDS.GWAN));
     const hit = VOC_GWAN_LABELS.find(l => t.includes(l));
-    if (hit) labelPos.push({ top: r.top, label: hit });
+    if (hit && !seen.has(hit)) { labelPos.push({ top: r.top, label: hit }); seen.add(hit); }
   });
   labelPos.sort((a, b) => a.top - b.top);
   function gwanAt(top) {
-    if (!labelPos.length) return '이론';
+    if (!labelPos.length) return '';
     let idx = -1;
     for (let i = 0; i < labelPos.length; i++) { if (top >= labelPos[i].top) idx = i; }
-    if (idx === -1) return '이론';                     // 첫 구분 라벨보다 위쪽(표 맨 위 NCS 서술행 등)
+    if (idx === -1) return '';                     // 첫 구분 라벨보다 위쪽(표 맨 위 NCS 서술행 등)
     return VOC_GWAN_DISPLAY[labelPos[idx].label] || labelPos[idx].label;
   }
 
@@ -504,8 +510,7 @@ async function analyzeVocTech(file, locationText, aiPageRange) {
   }
   if (!courses.length) throw new Error('표는 찾았지만 교과목 데이터를 읽어오지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
 
-  // 구분별(교양교과/기초기술교과/계열공통/특화전공) 편성시간 합계 + 총계
-  const VOC_GROUP_ORDER = ['교양교과', '기초기술교과', '계열공통', '특화전공'];
+  // 구분별(교양교과/기초기술/계열공통/특화전공) 편성시간 합계 + 총계
   const groupSum = {};
   VOC_GROUP_ORDER.forEach(g => { groupSum[g] = 0; });
   let grandTotal = 0;

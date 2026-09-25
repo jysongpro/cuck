@@ -1564,11 +1564,29 @@ function renderVocTechResult(courseKey, res) {
   const info = res.info || {};
   const infoItem = (k, v) => `<div class="info-item"><span class="ik">${k}</span><span class="iv">${esc(v || '-')}</span></div>`;
   const rowTr = (c, i) => `<tr>
-    <td>${i + 1}</td><td>${esc(c.gwan || '이론')}</td><td class="rc-name">${esc(c.name)}</td>
+    <td>${i + 1}</td><td>${esc(c.gwan || '-')}</td><td class="rc-name">${esc(c.name)}</td>
     <td class="rc-n">${c.ncsHours !== '' && c.ncsHours != null ? c.ncsHours : '-'}</td>
     <td class="rc-n">${c.semTotal != null ? c.semTotal : '-'}</td>
     <td class="rc-n">${c.semester === '1' ? c.credit : '-'}</td>
     <td class="rc-n">${c.semester === '2' ? c.credit : '-'}</td></tr>`;
+  // 총계를 맨 위에, 이후 구분별(교양교과→기초기술→계열공통→특화전공) 순으로 그룹의 첫줄에 소계를 배치하고 그 아래에 해당 교과목을 나열
+  let bodyHtml = '';
+  if (res.summary) {
+    bodyHtml += `<tr class="rc-total"><td colspan="4">총계</td><td class="rc-n">${res.summary.total}</td><td></td><td></td></tr>`;
+  }
+  let seq = 1;
+  const groupOrder = res.summary ? res.summary.groups.map(g => g.label) : ['교양교과', '기초기술', '계열공통', '특화전공'];
+  groupOrder.forEach(label => {
+    const grp = res.summary ? res.summary.groups.find(g => g.label === label) : null;
+    const groupCourses = res.courses.filter(c => c.gwan === label);
+    bodyHtml += `<tr class="rc-grp"><td colspan="4">${esc(label)} 소계</td><td class="rc-n">${grp ? grp.hours : '-'}</td><td></td><td></td></tr>`;
+    bodyHtml += groupCourses.map(c => rowTr(c, seq++ - 1)).join('');
+  });
+  const ungrouped = res.courses.filter(c => !groupOrder.includes(c.gwan));
+  if (ungrouped.length) {
+    bodyHtml += ungrouped.map(c => rowTr(c, seq++ - 1)).join('');
+  }
+  if (res.courses.length === 0) bodyHtml += '<tr><td colspan="7" class="rc-empty">해당 교과 없음</td></tr>';
   $('#roadmapResult').innerHTML = `
     <div class="panel-head" style="border:0;padding:18px 0 12px"><h2>교육운영계획서 정보</h2></div>
     <div class="panel info-card"><div class="info-grid">
@@ -1590,10 +1608,7 @@ function renderVocTechResult(courseKey, res) {
     <div class="panel" style="overflow-x:auto">
       <table class="rc-table">
         <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>NCS적용시간</th><th>편성시간(계)</th><th>편성시간(1학기)</th><th>편성시간(2학기)</th></tr></thead>
-        <tbody>${res.courses.map(rowTr).join('')}
-        ${res.summary ? res.summary.groups.map(g => `<tr class="rc-grp"><td colspan="4">${esc(g.label)} 소계</td><td class="rc-n">${g.hours}</td><td></td><td></td></tr>`).join('') : ''}
-        ${res.summary ? `<tr class="rc-total"><td colspan="4">총계</td><td class="rc-n">${res.summary.total}</td><td></td><td></td></tr>` : ''}
-        ${res.courses.length === 0 ? '<tr><td colspan="7" class="rc-empty">해당 교과 없음</td></tr>' : ''}
+        <tbody>${bodyHtml}
         </tbody>
       </table>
     </div>
