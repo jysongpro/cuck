@@ -169,17 +169,17 @@ const COURSE_SPECS = {
           {
             title: '전공교과 기준',
             fields: [
-              { key: 'majorRatioMin',  label: '전공교과 비율(최소)',     unit: '%',    def: 85,  note: '총 편성시간 대비 전공교과 비율' },
+              { key: 'majorRatioMin',  label: '전공교과비율(최소) 이상',     unit: '%',    def: 85,  note: '총 편성시간 대비 전공교과 비율 이상' },
               { key: 'courseHoursMax', label: '과목당 편성시간(이내)',   unit: '시간', def: 120, note: 'NCS 교과 제외' },
-              { key: 'splitAllowed',   label: '1개 교과 2학기 분할 편성', unit: '',     def: false, note: '금지(허용하려면 체크)' },
+              { key: 'splitAllowed',   label: '1개 교과 2학기 분할 편성', unit: '',     def: false, type: 'bool', trueLabel: '허용', falseLabel: '미허용', note: '허용/미허용 선택' },
             ],
           },
           {
             title: '교양·계열공통 교과',
             fields: [
-              { key: 'liberalHours',       label: '교양교과 편성시간',        unit: '시간', def: 34, note: '직업과사회 17h + 건강과능력개발 17h 필수 포함' },
-              { key: 'liberalJobSocietyH', label: '- 직업과사회 편성시간',     unit: '시간', def: 17, note: '필수' },
-              { key: 'liberalHealthH',     label: '- 건강과능력개발 편성시간', unit: '시간', def: 17, note: '필수' },
+              { key: 'liberalHours',       label: '교양교과편성시간 이상',        unit: '시간', def: 34, note: '직업과사회 17h + 건강과능력개발 17h 필수 포함' },
+              { key: 'liberalJobSocietyH', label: '직업과사회 편성시간 이상',     unit: '시간', def: 17, note: '필수' },
+              { key: 'liberalHealthH',     label: '건강과능력개발 편성시간 이상', unit: '시간', def: 17, note: '필수' },
               { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소)', unit: '%', def: 10 },
               { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대)', unit: '%', def: 20 },
             ],
@@ -189,23 +189,16 @@ const COURSE_SPECS = {
             fields: [
               { key: 'projectRatioMin', label: '프로젝트실습 비율(최소)', unit: '%',    def: 5,  note: '2학기 비NCS 필수' },
               { key: 'projectRatioMax', label: '프로젝트실습 비율(최대)', unit: '%',    def: 10 },
-              { key: 'capstoneHours',   label: '종합실습 편성시간',       unit: '시간', def: 40, note: '2학기 마지막 교과로 필수 편성' },
+              { key: 'capstoneHours',   label: '종합실습편성시간 이상',       unit: '시간', def: 40, note: '2학기 마지막 교과로 필수 편성' },
             ],
           },
           {
             title: '필수 편성 교과(시간)',
             fields: [
-              { key: 'safetyHours',        label: '산업안전 교과 편성시간', unit: '시간', def: 16, note: '온라인 6시간 포함, 2학기 편성만 허용(1학기 편성 불가)' },
-              { key: 'aiAppliedHours',     label: 'AI활용 교과 편성시간',   unit: '시간', def: 20, note: '지정 9개 교과 중 1개 이상' },
+              { key: 'safetyHours',        label: '산업안전교과 편성시간 이상', unit: '시간', def: 16, note: '온라인 6시간 포함, 2학기 편성만 허용(1학기 편성 불가)' },
+              { key: 'aiAppliedHours',     label: 'AI활용교과 편성시간 이상',   unit: '시간', def: 20, note: '지정 9개 교과 중 1개 이상' },
               { key: 'industrialAiHoursMin', label: '산업AI 교과 편성시간(최소)', unit: '시간', def: 20 },
               { key: 'industrialAiHoursMax', label: '산업AI 교과 편성시간(최대)', unit: '시간', def: 40 },
-            ],
-          },
-          {
-            title: 'NCS 능력단위',
-            fields: [
-              { key: 'ncsLevelMin', label: 'NCS 능력단위 최소 레벨', unit: 'Level', def: 2 },
-              { key: 'ncsLevelMax', label: 'NCS 능력단위 최대 레벨', unit: 'Level', def: 4, note: 'L2~L4 하위 능력단위 요소 전체 필수 편성(중복 금지)' },
             ],
           },
         ],
@@ -222,7 +215,6 @@ const COURSE_SPECS = {
           { key: 'c_safety',     label: '산업안전교과 16시간(온라인6h포함) 2학기 편성',    ref: '16h/2학기',       def: true },
           { key: 'c_aiApplied',  label: 'AI활용교과 20시간 이상 편성(9개 교과 중 1개)',    ref: '≥ 20h',           def: true },
           { key: 'c_industrialAi', label: '산업AI교과 20~40시간 편성',                     ref: '20~40h',          def: true },
-          { key: 'c_ncs',        label: 'NCS 능력단위 L2~L4 전체 편성(중복 금지)',         ref: 'L2~L4 전체',      def: true },
         ],
       },
       '600': {
@@ -241,17 +233,17 @@ const COURSE_SPECS = {
           {
             title: '전공교과 기준',
             fields: [
-              { key: 'majorRatioMin',  label: '전공교과 비율(최소)',     unit: '%',    def: 85,  note: '총 편성시간 대비 전공교과 비율' },
+              { key: 'majorRatioMin',  label: '전공교과비율(최소) 이상',     unit: '%',    def: 85,  note: '총 편성시간 대비 전공교과 비율 이상' },
               { key: 'courseHoursMax', label: '과목당 편성시간(이내)',   unit: '시간', def: 120, note: 'NCS 교과 제외' },
-              { key: 'splitAllowed',   label: '1개 교과 2학기 분할 편성', unit: '',     def: false, note: '금지(허용하려면 체크)' },
+              { key: 'splitAllowed',   label: '1개 교과 2학기 분할 편성', unit: '',     def: false, type: 'bool', trueLabel: '허용', falseLabel: '미허용', note: '허용/미허용 선택' },
             ],
           },
           {
             title: '교양·계열공통 교과',
             fields: [
-              { key: 'liberalHours',       label: '교양교과 편성시간',        unit: '시간', def: 34, note: '직업과사회 17h + 건강과능력개발 17h 필수 포함' },
-              { key: 'liberalJobSocietyH', label: '- 직업과사회 편성시간',     unit: '시간', def: 17, note: '필수' },
-              { key: 'liberalHealthH',     label: '- 건강과능력개발 편성시간', unit: '시간', def: 17, note: '필수' },
+              { key: 'liberalHours',       label: '교양교과편성시간 이상',        unit: '시간', def: 34, note: '직업과사회 17h + 건강과능력개발 17h 필수 포함' },
+              { key: 'liberalJobSocietyH', label: '직업과사회 편성시간 이상',     unit: '시간', def: 17, note: '필수' },
+              { key: 'liberalHealthH',     label: '건강과능력개발 편성시간 이상', unit: '시간', def: 17, note: '필수' },
               { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소)', unit: '%', def: 10 },
               { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대)', unit: '%', def: 20 },
             ],
@@ -261,23 +253,16 @@ const COURSE_SPECS = {
             fields: [
               { key: 'projectRatioMin', label: '프로젝트실습 비율(최소)', unit: '%',    def: 5,  note: '비NCS 필수' },
               { key: 'projectRatioMax', label: '프로젝트실습 비율(최대)', unit: '%',    def: 10 },
-              { key: 'capstoneHours',   label: '종합실습 편성시간',       unit: '시간', def: 40, note: '마지막 교과로 필수 편성' },
+              { key: 'capstoneHours',   label: '종합실습편성시간 이상',       unit: '시간', def: 40, note: '마지막 교과로 필수 편성' },
             ],
           },
           {
             title: '필수 편성 교과(시간)',
             fields: [
-              { key: 'safetyHours',        label: '산업안전 교과 편성시간', unit: '시간', def: 16, note: '온라인 6시간 포함' },
-              { key: 'aiAppliedHours',     label: 'AI활용 교과 편성시간',   unit: '시간', def: 20, note: '지정 9개 교과 중 1개 이상' },
+              { key: 'safetyHours',        label: '산업안전교과 편성시간 이상', unit: '시간', def: 16, note: '온라인 6시간 포함' },
+              { key: 'aiAppliedHours',     label: 'AI활용교과 편성시간 이상',   unit: '시간', def: 20, note: '지정 9개 교과 중 1개 이상' },
               { key: 'industrialAiHoursMin', label: '산업AI 교과 편성시간(최소)', unit: '시간', def: 20 },
               { key: 'industrialAiHoursMax', label: '산업AI 교과 편성시간(최대)', unit: '시간', def: 40 },
-            ],
-          },
-          {
-            title: 'NCS 능력단위',
-            fields: [
-              { key: 'ncsLevelMin', label: 'NCS 능력단위 최소 레벨', unit: 'Level', def: 2 },
-              { key: 'ncsLevelMax', label: 'NCS 능력단위 최대 레벨', unit: 'Level', def: 4, note: 'L2~L4 하위 능력단위 요소 전체 필수 편성(중복 금지)' },
             ],
           },
         ],
@@ -294,7 +279,6 @@ const COURSE_SPECS = {
           { key: 'c_safety',     label: '산업안전교과 16시간(온라인6h포함) 편성',    ref: '16h',       def: true },
           { key: 'c_aiApplied',  label: 'AI활용교과 20시간 이상 편성(9개 교과 중 1개)',    ref: '≥ 20h',           def: true },
           { key: 'c_industrialAi', label: '산업AI교과 20~40시간 편성',                     ref: '20~40h',          def: true },
-          { key: 'c_ncs',        label: 'NCS 능력단위 L2~L4 전체 편성(중복 금지)',         ref: 'L2~L4 전체',      def: true },
         ],
       },
     },
