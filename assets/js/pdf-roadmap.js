@@ -449,119 +449,126 @@ function vocGroupOrderFor(courseKey) { return courseKey === 'voc-hitech' ? VOC_G
  * 이를 막기 위해, 각 페이지의 실제 헤더 텍스트("NCS", "계", "1학기", "2학기", "3학기", "비고") 위치를 직접 찾아
  * 그 페이지에 맞는 컬럼 경계를 동적으로 계산한다. 헤더를 찾지 못한 페이지(표 헤더가 없는 이어지는 페이지 등)는
  * 이전에 감지된 경계를 그대로 이어받아 사용한다(호출자가 마지막 성공 경계를 캐시해 넘겨줌). */
-function detectVocTimeBounds(items) {
-  // 주의: PDF.js는 표의 헤더 텍스트를 "NCS"/"1학기" 같은 한 덩어리가 아니라 글자(또는 자소) 단위로 쪼개
-  // 각각을 별도 아이템으로 반환하는 경우가 매우 흔하다("32"를 "3","2"로 쪼개는 것과 동일한 현상).
-  // 그래서 개별 아이템 문자열을 통짜로 라벨과 비교하면 절대 일치하지 않는다.
-  // 해결: 헤더 영역(top이 작은 상단부)의 아이템들을 같은 가로줄(top)끼리 묶어 x순으로 이어붙인 뒤,
-  // 그 "재구성된 한 줄 텍스트" 안에서 라벨 문자열을 찾고, 매치된 위치에 해당하는 원래 아이템의 x좌표를 되돌려 쓴다.
-  const header = items.filter(it => it.top <= 150);
-  if (!header.length) return null;
-  const sorted = header.slice().sort((a, b) => a.top - b.top || a.x - b.x);
+/* v1.9.0 — 헤더 인식 전면 재작성
+ *  - 표 헤더가 페이지 상단(top<=150)에만 있다고 가정하던 제한 제거: "마.교과목구성" 제목 아래 페이지 중간에서 시작하는 표도 인식
+ *  - 글자 단위 x좌표를 아이템 폭(width)으로 보간하고, 라벨 "시작점"이 아닌 "중심"을 컬럼 기준으로 사용(값 셀은 가운데 정렬)
+ *  - 헤더 탐색 범위를 편성시간 하위행(계/1학기/2학기) 주변 밴드로 한정 → 본문 설명문의 "NCS 적용" 등 오검출 방지
+ *  - 시간(교과목 총 시간) 컬럼·교과목명 컬럼도 헤더 위치로 동적 산출(찾지 못하면 기존 고정값 사용)
+ *  - 편성시간 하위 컬럼이 "기초/심화/특화"로 인쇄된 문서는 layout='alt'로 표시(호출자가 하이테크과정 검수 불가 처리) */
+function vocNum(s) {
+  const t = despace(s).replace(/,/g, '');
+  return isNumStr(t) ? Number(t) : null;
+}
+function vocHeaderRows(items, tol) {
+  const sorted = items.slice().sort((a, b) => a.top - b.top || a.x - b.x);
   const rows = [];
-  const tol = 2.2;
   sorted.forEach(it => {
     let row = rows.find(r => Math.abs(r.top - it.top) <= tol);
     if (!row) { row = { top: it.top, items: [] }; rows.push(row); }
     row.items.push(it);
   });
-  rows.forEach(row => row.items.sort((a, b) => a.x - b.x));
-
-  // 한 줄의 재구성 텍스트에서 라벨을 찾아 그 시작 위치의 x좌표를 반환
-  function findInRows(label) {
-    for (const row of rows) {
-      let buf = '';
-      const charX = [];
-      row.items.forEach(it => {
-        const s = despace(it.str);
-        for (let k = 0; k < s.length; k++) charX.push(it.x);
-        buf += s;
-      });
-      const idx = buf.indexOf(label);
-      if (idx !== -1) return { x: charX[idx], top: row.top };
-    }
-    return null;
-  }
-
-  // 주의: "NCS" 글자 자체는 문서에 따라 그 위의 병합된 상위 헤더 셀("편성 시간" 등) 쪽에 인쇄되어 있어
-  // "NCS"만 찾으면 실제 NCS적용시간 컬럼(x좌표)이 아니라 옆의 다른 컬럼(1학기 등)과 겹치는 잘못된 x좌표를 주는
-  // 문서가 있다(예: "NCS"·"편성시간" 표제가 같은 줄에 위치, "적용"·"시간"은 그 아래 실제 컬럼 위치에 위치).
-  // 실제 데이터 컬럼과 항상 같은 x좌표에 인쇄되는 하위 라벨 "적용"을 우선 사용하고, 없을 때만 "NCS"로 대체한다.
-  const ncsItem = findInRows('적용') || findInRows('NCS') || findInRows('적용시간');
-  // 편성시간 하위 컬럼은 문서마다 "1학기/2학기/3학기"로 인쇄되기도 하고,
-  // 10개월 과정 등 일부 문서는 같은 컬럼을 "기초/심화/특화"로 인쇄하기도 한다(값의 의미는 동일: 순서상 1·2·3번째 학기).
-  // 두 표기 중 어느 것이 있는지 헤더 행에서 찾아 그에 맞는 라벨로 좌표를 추출한다.
-  const semRow = rows.find(r => {
-    let buf = '';
-    r.items.forEach(it => { buf += despace(it.str); });
-    return buf.includes('1학기') && buf.includes('2학기');
-  }) || rows.find(r => {
-    let buf = '';
-    r.items.forEach(it => { buf += despace(it.str); });
-    return buf.includes('기초') && buf.includes('심화');
-  });
-  let semTotalItem = null, sem1Item = null, sem2Item = null, sem3Item = null;
-  if (semRow) {
-    let buf = '';
-    const charX = [];
-    semRow.items.forEach(it => {
+  rows.forEach(row => {
+    row.items.sort((a, b) => a.x - b.x);
+    let buf = ''; const cx = [];
+    row.items.forEach(it => {
       const s = despace(it.str);
-      for (let k = 0; k < s.length; k++) charX.push(it.x);
+      const w = it.width || 0;
+      for (let k = 0; k < s.length; k++) cx.push(it.x + (s.length ? (k + 0.5) * w / s.length : 0));
       buf += s;
     });
-    const at = (label) => { const idx = buf.indexOf(label); return idx === -1 ? null : { x: charX[idx], top: semRow.top }; };
-    const useAltLabels = !(buf.includes('1학기') && buf.includes('2학기'));
-    semTotalItem = at('계');
-    if (useAltLabels) {
-      sem1Item = at('기초');
-      sem2Item = at('심화');
-      sem3Item = at('특화');
-    } else {
-      sem1Item = at('1학기');
-      sem2Item = at('2학기');
-      sem3Item = at('3학기');
-    }
+    row.buf = buf; row.charX = cx;
+  });
+  return rows;
+}
+/* row 안에서 label의 모든 출현 위치(중심 x) 반환 */
+function vocFindAll(row, label) {
+  const out = [];
+  let idx = row.buf.indexOf(label);
+  while (idx !== -1) {
+    const a = row.charX[idx], b = row.charX[idx + label.length - 1];
+    out.push({ x: (a + b) / 2, top: row.top, idx });
+    idx = row.buf.indexOf(label, idx + 1);
   }
-  const remarkItem = findInRows('비고');
+  return out;
+}
+function detectVocTimeBounds(items) {
+  if (!items || !items.length) return null;
+  const rows = vocHeaderRows(items, 2.2);
+  // 1) 편성시간 하위 헤더행 찾기: "1학기"+"2학기" 또는 "기초"+"심화"(+"특화")가 표 오른쪽 영역(x>250)에 함께 있는 행
+  let semRow = null, layout = 'semester';
+  for (const r of rows) {
+    const s1 = vocFindAll(r, '1학기').filter(p => p.x > 250), s2 = vocFindAll(r, '2학기').filter(p => p.x > 250);
+    if (s1.length && s2.length) { semRow = r; layout = 'semester'; break; }
+    const a1 = vocFindAll(r, '기초').filter(p => p.x > 250), a2 = vocFindAll(r, '심화').filter(p => p.x > 250);
+    if (a1.length && a2.length) { semRow = r; layout = 'alt'; break; }
+  }
+  if (!semRow) return null;
+  const pick = (label) => { const f = vocFindAll(semRow, label).filter(p => p.x > 250); return f.length ? f[0] : null; };
+  const sem1 = layout === 'alt' ? pick('기초') : pick('1학기');
+  const sem2 = layout === 'alt' ? pick('심화') : pick('2학기');
+  const sem3 = layout === 'alt' ? pick('특화') : pick('3학기');
+  // 2) 헤더 밴드: 하위 헤더행 위 50pt ~ 아래 6pt (병합 헤더 "NCS/적용시간", "편성시간", "시간", "교과목명" 등이 걸치는 범위)
+  const band = rows.filter(r => r.top >= semRow.top - 50 && r.top <= semRow.top + 6);
+  const inBand = (label) => band.reduce((acc, r) => acc.concat(vocFindAll(r, label)), []);
+  // 3) 편성시간(계): 1학기(기초) 왼쪽에서 가장 가까운 "계"
+  const leftNearest = (cands, xMax, xMin) => cands.filter(c => c.x < xMax && c.x > (xMin == null ? -1 : xMin)).sort((a, b) => b.x - a.x)[0] || null;
+  let total = leftNearest(vocFindAll(semRow, '계'), sem1.x);
+  if (!total) total = leftNearest(inBand('계'), sem1.x, sem1.x - 70);
+  if (!total) return null;
+  // 4) NCS적용시간: 계 왼쪽에서 가장 가까운 "적용"(없으면 "NCS")
+  let ncs = leftNearest(inBand('적용'), total.x - 5) || leftNearest(inBand('NCS'), total.x - 5);
+  if (!ncs) return null;
+  // 5) 교과목명 / 시간 컬럼(선택): "교과목" 라벨과, 그 오른쪽 첫 "시간"(적용시간·편성시간 제외)
+  let nameLbl = null, hoursLbl = null;
+  const nameC = inBand('교과목').filter(c => c.x < ncs.x).sort((a, b) => a.x - b.x);
+  if (nameC.length) nameLbl = nameC[0];
+  band.forEach(r => vocFindAll(r, '시간').forEach(c => {
+    const pre = r.buf.slice(Math.max(0, c.idx - 2), c.idx);
+    if (pre === '적용' || pre === '편성' || pre.endsWith('S')) return;
+    if (c.x >= ncs.x - 10) return;
+    if (nameLbl && c.x <= nameLbl.x) return;
+    if (!hoursLbl || c.x < hoursLbl.x) hoursLbl = c;
+  }));
+  const remark = inBand('비고').filter(c => c.x > total.x).sort((a, b) => a.x - b.x)[0] || null;
 
-  if (!ncsItem || !semTotalItem || !sem1Item || !sem2Item) return null;   // 정보 부족 — 호출자가 이전 경계 또는 기본값으로 대체
-
-  const cols = [
-    { key: 'NCS_APPLIED', x: ncsItem.x },
-    { key: 'SEM_TOTAL',   x: semTotalItem.x },
-    { key: 'SEM1',        x: sem1Item.x },
-    { key: 'SEM2',        x: sem2Item.x },
-  ];
-  if (sem3Item) cols.push({ key: 'SEM3', x: sem3Item.x });
+  const cols = [{ key: 'NCS_APPLIED', x: ncs.x }, { key: 'SEM_TOTAL', x: total.x }, { key: 'SEM1', x: sem1.x }];
+  if (sem2) cols.push({ key: 'SEM2', x: sem2.x });
+  if (sem3) cols.push({ key: 'SEM3', x: sem3.x });
   cols.sort((a, b) => a.x - b.x);
-  const rightEdge = remarkItem ? remarkItem.x : (cols[cols.length - 1].x + 60);
-
-  const bounds = {};
+  const bounds = { layout };
   for (let i = 0; i < cols.length; i++) {
-    const left = i === 0 ? cols[i].x - 25 : (cols[i - 1].x + cols[i].x) / 2;
-    const right = i === cols.length - 1 ? Math.min(rightEdge, cols[i].x + 35) : (cols[i].x + cols[i + 1].x) / 2;
-    bounds[cols[i].key] = [left, right];
+    const gapL = i > 0 ? (cols[i].x - cols[i - 1].x) / 2 : (cols.length > 1 ? (cols[1].x - cols[0].x) / 2 : 15);
+    const gapR = i < cols.length - 1 ? (cols[i + 1].x - cols[i].x) / 2 : gapL;
+    let right = cols[i].x + gapR;
+    if (i === cols.length - 1 && remark) right = Math.min(right, (cols[i].x + remark.x) / 2);
+    bounds[cols[i].key] = [cols[i].x - gapL, right];
+  }
+  if (!bounds.SEM2) bounds.SEM2 = [-2, -1];
+  if (hoursLbl) {
+    const w = 14;
+    bounds.HOURS = [hoursLbl.x - w, hoursLbl.x + w];
+    const nameLeft = nameLbl ? Math.min(VOC_BOUNDS.NAME[0], nameLbl.x - 60) : VOC_BOUNDS.NAME[0];
+    bounds.NAME = [Math.max(nameLeft, VOC_BOUNDS.GWAN[1] - 5), hoursLbl.x - w];
   }
   return bounds;
 }
 
+/* 편성시간 하위 헤더가 "기초/심화/특화"인지 독립 판정(계·NCS 헤더 인식 실패와 무관하게 동작) */
+function vocHasAltHeader(items) {
+  return vocHeaderRows(items || [], 2.2).some(r =>
+    vocFindAll(r, '기초').some(p => p.x > 250) && vocFindAll(r, '심화').some(p => p.x > 250) && vocFindAll(r, '특화').some(p => p.x > 250));
+}
+
 function vocReadCounts(r, bounds) {
   const b = bounds || VOC_BOUNDS;
-  const ncsStr = vocRowText(r, b.NCS_APPLIED).trim();
-  const semTotalStr = vocRowText(r, b.SEM_TOTAL).trim();
-  const sem1Str = vocRowText(r, b.SEM1).trim();
-  const sem2Str = vocRowText(r, b.SEM2).trim();
-  const sem3Str = b.SEM3 ? vocRowText(r, b.SEM3).trim() : '';
-  const sem1 = isNumStr(sem1Str) ? Number(sem1Str) : 0;
-  const sem2 = isNumStr(sem2Str) ? Number(sem2Str) : 0;
-  const sem3 = isNumStr(sem3Str) ? Number(sem3Str) : 0;   // 3학기 편성시간 — 화면/집계 모두 0이라도 별도 컬럼으로 그대로 표시(병합하지 않음)
-  // "편성시간(계)" 컬럼이 셀 병합/좌표 오차로 0(또는 미인식)으로 읽히는 경우, 1·2학기 값의 합으로 보정한다.
-  // (실제 표에서는 계 = 1학기 + 2학기가 항상 성립하므로 안전한 대체값이다.)
-  let semTotal = isNumStr(semTotalStr) ? Number(semTotalStr) : '';
-  if ((semTotal === '' || semTotal === 0) && (sem1 > 0 || sem2 > 0)) semTotal = sem1 + sem2;
-  let ncsHours = isNumStr(ncsStr) ? Number(ncsStr) : '';
-  // NCS적용시간이 편성시간(계) 컬럼과 좌표가 겹쳐 "편성시간 전체"를 그대로 복제해 읽는 오인식 방어:
-  // NCS적용시간은 정의상 편성시간(계)을 초과할 수 없다. 초과하는 값이 읽히면 컬럼이 밀려 읽힌 것으로 보고 무시(빈 값)한다.
+  const rd = (rg) => rg ? vocNum(vocRowText(r, rg)) : null;
+  const ncsV = rd(b.NCS_APPLIED), totV = rd(b.SEM_TOTAL);
+  const sem1 = rd(b.SEM1) || 0, sem2 = rd(b.SEM2) || 0, sem3 = rd(b.SEM3) || 0;
+  let semTotal = totV != null ? totV : '';
+  // 계가 미인식/0이면 학기 합으로 보정(계 = 1학기 + 2학기 [+ 3학기])
+  if ((semTotal === '' || semTotal === 0) && (sem1 > 0 || sem2 > 0 || sem3 > 0)) semTotal = sem1 + sem2 + sem3;
+  let ncsHours = ncsV != null ? ncsV : '';
+  // NCS적용시간은 편성시간(계)을 초과할 수 없음 → 초과 시 컬럼 밀림으로 보고 무시
   if (ncsHours !== '' && semTotal !== '' && ncsHours > semTotal) ncsHours = '';
   return { ncsHours, semTotal, sem1, sem2, sem3 };
 }
@@ -572,17 +579,20 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
   // 그 위/아래의 별도 행(능력단위분류번호가 적힌 행)에 나뉘어 인쇄된다. 이런 "능력단위 서브행"은 이름이 없고
   // NCS적용시간/학기시간 값만 가지므로, 가장 가까운(세로 거리) 실제 교과목 행에 합산해 붙여준다.
   const parsed = rows.map(r => {
-    const name = vocRowText(r, VOC_BOUNDS.NAME).trim();
-    const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
+    const bb = bounds || VOC_BOUNDS;
+    let name = vocRowText(r, bb.NAME || VOC_BOUNDS.NAME).trim();
+    if (despace(name) === '소계' || despace(name) === '총계') name = despace(name);   // "소 계", "총 계" 표기 대응
+    const hv = vocNum(vocRowText(r, bb.HOURS || VOC_BOUNDS.HOURS));
+    const hoursStr = hv != null ? String(hv) : '';   // "1,200" 같은 천단위 쉼표 대응
     const cnt = vocReadCounts(r, bounds);
     return { top: r.top, name, hoursStr, cnt };
   });
   const boundaries = parsed
     .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0, extraSem3: 0 }))
-    .filter(p => p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계'));
+    .filter(p => p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계' || (p.cnt.semTotal !== '' && p.cnt.semTotal > 0 && !/교과|구분|시간|능력단위/.test(p.name))));
 
   parsed.forEach(p => {
-    const isBoundary = p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계');
+    const isBoundary = p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계' || (p.cnt.semTotal !== '' && p.cnt.semTotal > 0 && !/교과|구분|시간|능력단위/.test(p.name)));
     if (isBoundary) return;
     const hasData = p.cnt.ncsHours !== '' || p.cnt.sem1 > 0 || p.cnt.sem2 > 0 || p.cnt.sem3 > 0;
     if (!hasData) return;
@@ -670,6 +680,12 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
     const items = await roadmapPageItems(page);
     const detected = detectVocTimeBounds(items);
     if (detected) vocBoundsCache = detected;
+    // 하이테크과정: 편성시간이 (계/기초/심화/특화)로 구분된 문서는 (계/1학기/2학기) 기준 검수 로직을 적용할 수 없으므로 검수 불가
+    if (courseKey === 'voc-hitech' && p <= startPage + 1 && ((detected && detected.layout === 'alt') || vocHasAltHeader(items))) {
+      const err = new Error('이 교육운영계획서의 교과목구성 표는 편성시간이 "계/기초/심화/특화"로 구분되어 있습니다. 하이테크과정 검수는 편성시간 "계/1학기/2학기" 구분 문서만 지원하므로 검수할 수 없습니다.');
+      err.vocBlocked = true;
+      throw err;
+    }
     const found = extractVocTechCourses(items, state, vocGroupOrderFor(courseKey), vocBoundsCache || VOC_BOUNDS);
     if (p > startPage && found.courses.length === 0 && found.subtotals.length === 0 && !found.totalRow) break; // 표가 끝난 것으로 판단
     courses = courses.concat(found.courses);
