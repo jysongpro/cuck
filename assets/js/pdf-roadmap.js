@@ -453,32 +453,64 @@ function vocReadCounts(r) {
 
 function extractVocTechCourses(items, state) {
   const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
+  // 능력단위가 2~4개인 교과목은 교과목명·편성시간(HOURS)만 자기 행에 있고, 능력단위별 NCS적용시간·학기시간은
+  // 그 위/아래의 별도 행(능력단위분류번호가 적힌 행)에 나뉘어 인쇄된다. 이런 "능력단위 서브행"은 이름이 없고
+  // NCS적용시간/학기시간 값만 가지므로, 가장 가까운(세로 거리) 실제 교과목 행에 합산해 붙여준다.
+  const parsed = rows.map(r => {
+    const name = vocRowText(r, VOC_BOUNDS.NAME).trim();
+    const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
+    const cnt = vocReadCounts(r);
+    return { top: r.top, name, hoursStr, cnt };
+  });
+  const boundaries = parsed
+    .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0 }))
+    .filter(p => p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계'));
+
+  parsed.forEach(p => {
+    const isBoundary = p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계');
+    if (isBoundary) return;
+    const hasData = p.cnt.ncsHours !== '' || p.cnt.sem1 > 0 || p.cnt.sem2 > 0;
+    if (!hasData) return;
+    let best = null, bestDist = Infinity;
+    boundaries.forEach(b => {
+      if (b.name === '총계' || b.name === '소계') return;   // 능력단위 서브행은 항상 실제 교과목에 속하며, 소계/총계 행에는 붙지 않는다
+      const dist = Math.abs(b.top - p.top);
+      if (dist < bestDist) { bestDist = dist; best = b; }
+    });
+    if (best && bestDist <= 15) {
+      if (p.cnt.ncsHours !== '') best.extraNcs += p.cnt.ncsHours;
+      best.extraSem1 += p.cnt.sem1;
+      best.extraSem2 += p.cnt.sem2;
+    }
+  });
+
   const courses = [];
   const subtotals = [];
   let totalRow = null;
-  rows.forEach(r => {
-    const name = vocRowText(r, VOC_BOUNDS.NAME).trim();
-    const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
-    if (!name) return;
+  boundaries.forEach(b => {
+    const { name, hoursStr, cnt } = b;
     if (name === '총계') {
-      const cnt = vocReadCounts(r);
-      totalRow = { label: '총계', ncsHours: cnt.ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1, sem2: cnt.sem2 };
+      const ncsHours = cnt.ncsHours !== '' ? cnt.ncsHours : (b.extraNcs || '');
+      totalRow = { label: '총계', ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2 };
       return;
     }
     if (name === '소계') {
       state.groupIdx++;
       const label = VOC_GROUP_ORDER[state.groupIdx] || `구분${state.groupIdx + 1}`;
-      const cnt = vocReadCounts(r);
-      subtotals.push({ label, ncsHours: cnt.ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1, sem2: cnt.sem2 });
+      const ncsHours = cnt.ncsHours !== '' ? cnt.ncsHours : (b.extraNcs || '');
+      subtotals.push({ label, ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2 });
       return;
     }
-    if (!isNumStr(hoursStr)) return;                 // 교과목 데이터 행이 아니면(서술행 등) 무시
-    const cnt = vocReadCounts(r);
+    // 실제 교과목 행: 자기 행의 값 + 능력단위 서브행에서 합산된 값을 더한다(단일 능력단위 교과는 extra가 0이라 영향 없음)
+    const ncsHours = (cnt.ncsHours !== '' ? cnt.ncsHours : 0) + b.extraNcs;
+    const sem1 = cnt.sem1 + b.extraSem1;
+    const sem2 = cnt.sem2 + b.extraSem2;
     const gwan = VOC_GROUP_ORDER[state.groupIdx] || '';
     const semTotal = cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr);
-    if (cnt.sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: cnt.ncsHours, semTotal, credit: cnt.sem1 });
-    if (cnt.sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: cnt.ncsHours, semTotal, credit: cnt.sem2 });
-    if (cnt.sem1 <= 0 && cnt.sem2 <= 0) courses.push({ name, gwan, semester: '', ncsHours: cnt.ncsHours, semTotal, credit: Number(hoursStr) });
+    const finalNcs = ncsHours || '';
+    if (sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: sem1 });
+    if (sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: sem2 });
+    if (sem1 <= 0 && sem2 <= 0) courses.push({ name, gwan, semester: '', ncsHours: finalNcs, semTotal, credit: Number(hoursStr) });
   });
   return { courses, subtotals, totalRow };
 }
