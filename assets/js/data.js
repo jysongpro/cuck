@@ -344,7 +344,6 @@ const COURSE_SPECS = {
           { key: 'c_major',      label: '전공교과(기초기술+계열공통+특화전공) 85% 이상 편성', ref: '≥ 85%',           def: true },
           { key: 'c_courseMax',  label: '과목당 120시간 이내 편성(NCS 제외)',              ref: '≤ 120h',          def: true },
           { key: 'c_split',      label: '1개 교과 2개 학기 분할 편성 금지',                 ref: '분할 불가',        def: true },
-          { key: 'c_liberal',    label: '교양교과 미편성(과정평가형자격 운영학과 예외)',   ref: '편성 불가',       def: true },
           { key: 'c_safety',     label: '산업안전교과 16시간(온라인6h포함) 2학기 편성',    ref: '16h/2학기',       def: true },
           { key: 'c_aiApplied',  label: 'AI활용 교과풀(9개 교과)내 교과 편성',             ref: '≥ 20h',           def: true },
           { key: 'c_industrialAi', label: '계열별 50개 교과풀 또는 학과 자체 편성',         ref: '20~40h',          def: true },
@@ -404,7 +403,6 @@ const COURSE_SPECS = {
           { key: 'c_major',      label: '전공교과(기초기술+계열공통+특화전공) 85% 이상 편성', ref: '≥ 85%',           def: true },
           { key: 'c_courseMax',  label: '과목당 120시간 이내 편성(NCS 제외)',              ref: '≤ 120h',          def: true },
           { key: 'c_split',      label: '1개 교과 2개 학기 분할 편성 금지',                 ref: '분할 불가',        def: true },
-          { key: 'c_liberal',    label: '교양교과 미편성(과정평가형자격 운영학과 예외)',   ref: '편성 불가',       def: true },
           { key: 'c_seriesCommon', label: '계열공통교과 10~20% 편성',                      ref: '10~20%',          def: true },
           { key: 'c_project',    label: '프로젝트실습 5~10% 비중, 2학기 비NCS 필수 편성',   ref: '5~10%',           def: true },
           { key: 'c_capstone',   label: '종합실습 2학기 마지막 40시간 편성',               ref: '40h',             def: true },
@@ -467,7 +465,6 @@ const COURSE_SPECS = {
           { key: 'c_major',      label: '전공교과(기초기술+계열공통+특화전공) 85% 이상 편성', ref: '≥ 85%',           def: true },
           { key: 'c_courseMax',  label: '과목당 120시간 이내 편성(NCS 제외)',              ref: '≤ 120h',          def: true },
           { key: 'c_split',      label: '1개 교과 2개 학기 분할 편성 금지',                 ref: '분할 불가',        def: true },
-          { key: 'c_liberal',    label: '교양교과 미편성(과정평가형자격 운영학과 예외)',   ref: '편성 불가',       def: true },
           { key: 'c_seriesCommon', label: '계열공통교과 10~20% 편성',                      ref: '10~20%',          def: true },
           { key: 'c_project',    label: '프로젝트실습 5~10% 비중, 2학기 비NCS 필수 편성',   ref: '5~10%',           def: true },
           { key: 'c_capstone',   label: '종합실습 2학기 마지막 40시간 편성',               ref: '40h',             def: true },
@@ -616,7 +613,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정개편 세부기준 검수 지원 도구',
-  version: '1.9.3',
+  version: '1.9.5',
   developer: '학교법인 한국폴리텍대학 AI혁신부',
 };
 

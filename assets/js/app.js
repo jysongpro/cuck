@@ -1905,7 +1905,7 @@ function runVocTechCheck(courseKey) {
       overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
   if (cl.c_split) add(splitCourses.length === 0, '1개 교과 2개 학기 분할 편성 금지', splitCourses.length + '개 과목 위반', '분할 편성 금지',
       splitCourses.length ? `분할 편성된 과목: ${splitCourses.map(c => c.name).join(', ')}` : '');
-  if (cl.c_liberal) {
+  if (cl.c_liberal && courseKey !== 'voc-hitech') {   // v1.9.4: 하이테크과정은 교양교과 검수항목 삭제(교양교과는 선택 편성)
     if (std.liberalAllowed === false) {
       // 하이테크과정 등: 원칙적으로 교양교과 편성 불가(과정평가형자격 운영학과는 세부기준에서 liberalAllowed를 true로 바꿔 예외 적용)
       const ok = liberalHours === 0;

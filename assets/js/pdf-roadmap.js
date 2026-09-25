@@ -435,8 +435,11 @@ const VOC_GWAN_DISPLAY = {
 // 하이테크과정(voc-hitech)은 교양교과를 편성하지 않아 3개 구분(기초기술/계열공통/특화전공)만 존재한다.
 // 이 순서가 PDF의 소계 등장 순서와 그대로 일치해야 각 소계/교과목이 올바른 구분으로 배치된다.
 const VOC_GROUP_ORDER = ['교양교과', '기초기술', '계열공통', '특화전공'];
+// v1.9.4: 하이테크과정도 교양교과를 편성할 수 있다(선택). 편성된 경우 교양교과→기초기술→계열공통→특화전공,
+// 미편성이면 기초기술부터 나열된다. 실제 문서의 구분 구성은 analyzeVocTech에서 소계 행 개수로 판정한다.
 const VOC_GROUP_ORDER_HITECH = ['기초기술', '계열공통', '특화전공'];
-function vocGroupOrderFor(courseKey) { return courseKey === 'voc-hitech' ? VOC_GROUP_ORDER_HITECH : VOC_GROUP_ORDER; }
+function vocGroupOrderFor(courseKey) { return VOC_GROUP_ORDER; }
+const VOC_GROUP_PLACEHOLDER = ['#G0', '#G1', '#G2', '#G3', '#G4'];
 
 /* 구분 셀이 세로 병합되어 있어 라벨 문자열이 그룹 중간(혹은 끝쪽)에 찍히는 경우가 많아, 라벨 위치로 구분을 판단하면
  * 그룹 초반부 교과목이 이전 구분으로 잘못 붙는 오류가 발생한다.
@@ -603,6 +606,20 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0, extraSem3: 0, extraHours: 0, units: 0 }))
     .filter(p => p.isTotal || p.nameOnly || (p.name && p.hasData && !HEADER_RE.test(despace(p.name))));
 
+  // v1.9.5 — 교과목명 줄바꿈 처리: "반도체장비기구및전장설 / 계", "반도체시스템제작및유지 / 보수"처럼
+  //  긴 교과목명의 다음 줄 조각은 값 없는 이름-only 행으로 읽힌다. 바로 위(9pt 이내) 교과목 행에 이어 붙이고 경계에서 제거한다.
+  for (let i = boundaries.length - 1; i >= 1; i--) {
+    const cur = boundaries[i], prev = boundaries[i - 1];
+    if (!cur.nameOnly || prev.isTotal) continue;
+    const gap = cur.top - prev.top;
+    if (gap <= 0 || gap > 9) continue;
+    // 교과목명(위)과 그 값 행(아래 3~4pt)이 별도 행으로 읽히는 경우가 있어, prev 바로 아래 5pt 이내의 값 행은 prev 자신의 값으로 본다
+    const between = parsed.some(q => !q.name && q.hasData && q.top > prev.top + 5 && q.top < cur.top - 1);
+    if (between) continue;
+    prev.name = (prev.name + cur.name).replace(/\s+/g, '');
+    boundaries.splice(i, 1);
+  }
+
   parsed.forEach(p => {
     if (p.name || !p.hasData) return;                      // 이름 없는 데이터 행 = 능력단위 행
     const near = (list) => {
@@ -727,6 +744,8 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
   const subtotalByLabel = {};
   let totalRow = null;
   const state = { groupIdx: -1 };
+  const scanOrder = courseKey === 'voc-hitech' ? VOC_GROUP_PLACEHOLDER : VOC_GROUP_ORDER;   // 하이테크: 구분 구성(교양교과 유무) 판정 전 임시 라벨
+  let libTextSeen = false;
   let vocBoundsCache = null;   // 표 헤더가 없는 이어지는 페이지에서도 직전에 감지한 컬럼 경계를 계속 사용
   const maxScan = Math.min(pdf.numPages, startPage + 3);
   for (let p = startPage; p <= maxScan; p++) {
@@ -740,14 +759,27 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
       err.vocBlocked = true;
       throw err;
     }
-    const found = extractVocTechCourses(items, state, vocGroupOrderFor(courseKey), vocBoundsCache || VOC_BOUNDS);
+    if (!libTextSeen) {
+      const colTxt = items.filter(i => i.x < VOC_BOUNDS.GWAN[1] + 5).sort((a, b) => a.top - b.top || a.x - b.x).map(i => despace(i.str)).join('');
+      if (/교양교?과?|교\s*양/.test(colTxt) && /교양교과|교양/.test(colTxt)) libTextSeen = /교양/.test(colTxt);
+    }
+    const found = extractVocTechCourses(items, state, scanOrder, vocBoundsCache || VOC_BOUNDS);
     if (p > startPage && found.courses.length === 0 && found.subtotals.length === 0 && !found.totalRow) break; // 표가 끝난 것으로 판단
     courses = courses.concat(found.courses);
     found.subtotals.forEach(s => { subtotalByLabel[s.label] = s; });
     if (found.totalRow) totalRow = found.totalRow;
-    if (vocTableComplete(courses, totalRow, subtotalByLabel, vocGroupOrderFor(courseKey))) break;   // 표 합계 도달 → 이후 페이지 스캔 중단
+    if (vocTableComplete(courses, totalRow, subtotalByLabel, scanOrder.slice(0, courseKey === 'voc-hitech' ? 3 : 4))) break;   // 표 합계 도달 → 이후 페이지 스캔 중단
   }
-  courses = vocTrimAfterTableEnd(courses, totalRow, subtotalByLabel, vocGroupOrderFor(courseKey));
+  courses = vocTrimAfterTableEnd(courses, totalRow, subtotalByLabel, scanOrder.slice(0, courseKey === 'voc-hitech' ? 3 : 4));
+  if (courseKey === 'voc-hitech') {
+    // 구분 확정: 소계 4개 → 교양교과 편성 문서, 3개 → 교양교과 미편성(기초기술부터). 소계를 일부 못 읽은 경우 구분 열의 "교양" 표기로 보조 판정
+    const nSub = Object.keys(subtotalByLabel).length;
+    const hasLib = nSub >= 4 || (nSub < 3 && libTextSeen);
+    const realOrder = hasLib ? VOC_GROUP_ORDER : VOC_GROUP_ORDER_HITECH;
+    const mapLabel = (l) => { const i = VOC_GROUP_PLACEHOLDER.indexOf(l); return i >= 0 ? (realOrder[i] || ('구분' + (i + 1))) : l; };
+    courses.forEach(c => { c.gwan = mapLabel(c.gwan); });
+    Object.keys(subtotalByLabel).forEach(k => { const v = subtotalByLabel[k]; delete subtotalByLabel[k]; v.label = mapLabel(k); subtotalByLabel[v.label] = v; });
+  }
   if (!courses.length) throw new Error('표는 찾았지만 교과목 데이터를 읽어오지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
 
   // 하이테크과정 1,200시간 트랙은 "2학기제 운영"을 전제로 세부기준이 설계되어 있어, 실제로 3개 학기(10개월형 등)로
