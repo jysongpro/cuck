@@ -849,8 +849,8 @@ function buildCriteriaList(courseKey) {
   });
   Object.values(groupMap2).forEach(g => { g.req = g._parts.join(g.op === 'OR' ? ' 또는 ' : ' 그리고 '); delete g._parts; delete g.op; });
 
-  // 교양교과 설정(교양필수교과 검수기준) — 등록된 경우에만 미리보기에 노출
-  if (LiberalArtsStore.isSet(courseKey)) {
+  // 교양교과 설정(교양필수교과 검수기준) — 학위과정 전용 항목이므로 전문기술과정(voc-tech)에는 노출하지 않음
+  if (courseKey !== 'voc-tech' && LiberalArtsStore.isSet(courseKey)) {
     const laRule = LiberalCheckRuleStore.get(courseKey);
     if (laRule.checkOffered) items.push({ title: '교양필수교과 편성 여부(역량군별)', req: '설정된 필수교과가 역량군별로 모두 편성', src: '교양교과설정' });
     if (laRule.checkMaxPerGroup) items.push({ title: '교양필수교과 역량군당 편성 수', req: `역량군당 최대 ${laRule.maxPerGroup}과목`, src: '교양교과설정' });
