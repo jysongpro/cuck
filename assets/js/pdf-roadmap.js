@@ -761,7 +761,7 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
     }
     if (!libTextSeen) {
       const colTxt = items.filter(i => i.x < VOC_BOUNDS.GWAN[1] + 5).sort((a, b) => a.top - b.top || a.x - b.x).map(i => despace(i.str)).join('');
-      if (/교양교?과?|교\s*양/.test(colTxt) && /교양교과|교양/.test(colTxt)) libTextSeen = /교양/.test(colTxt);
+      if (/교양/.test(colTxt)) libTextSeen = true;
     }
     const found = extractVocTechCourses(items, state, scanOrder, vocBoundsCache || VOC_BOUNDS);
     if (p > startPage && found.courses.length === 0 && found.subtotals.length === 0 && !found.totalRow) break; // 표가 끝난 것으로 판단
@@ -774,7 +774,8 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
   if (courseKey === 'voc-hitech') {
     // 구분 확정: 소계 4개 → 교양교과 편성 문서, 3개 → 교양교과 미편성(기초기술부터). 소계를 일부 못 읽은 경우 구분 열의 "교양" 표기로 보조 판정
     const nSub = Object.keys(subtotalByLabel).length;
-    const hasLib = nSub >= 4 || (nSub < 3 && libTextSeen);
+    // v1.9.6: 구분 열에 "교양" 표기가 있으면 교양교과 편성 문서로 우선 판정(브라우저 텍스트 분할 차이로 소계 행 개수가 달라져도 안전)
+    const hasLib = nSub >= 4 || libTextSeen;
     const realOrder = hasLib ? VOC_GROUP_ORDER : VOC_GROUP_ORDER_HITECH;
     const mapLabel = (l) => { const i = VOC_GROUP_PLACEHOLDER.indexOf(l); return i >= 0 ? (realOrder[i] || ('구분' + (i + 1))) : l; };
     courses.forEach(c => { c.gwan = mapLabel(c.gwan); });

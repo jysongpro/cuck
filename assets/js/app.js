@@ -1797,6 +1797,7 @@ function downloadFile(name, content) {
 }
 
 /* ---------- 검수 엔진(전문기술과정 · 시간 기준) ------------------------ */
+let lastVocPathway = false;   // 하이테크과정 교양교과 편성 → 과정평가형 자동 표시
 function runVocTechCheck(courseKey) {
   const rows = curriculumRows
     .map(r => ({
@@ -1905,6 +1906,12 @@ function runVocTechCheck(courseKey) {
       overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
   if (cl.c_split) add(splitCourses.length === 0, '1개 교과 2개 학기 분할 편성 금지', splitCourses.length + '개 과목 위반', '분할 편성 금지',
       splitCourses.length ? `분할 편성된 과목: ${splitCourses.map(c => c.name).join(', ')}` : '');
+  // v1.9.6: 하이테크과정에서 교양교과가 편성된 경우 → 과정평가형 운영학과로 보고 체크리스트에 정보 항목으로 표시
+  if (courseKey === 'voc-hitech' && liberalHours > 0) {
+    add(true, '교양교과 편성(과정평가형)', `${liberalHours}h 편성 (${liberalCourses.map(c => c.name).filter((v, i, a) => a.indexOf(v) === i).join(', ')})`,
+        '과정평가형 운영학과만 편성 가능', '교양교과가 편성되어 과정평가형 운영학과로 분류됩니다.');
+    lastVocPathway = true;
+  } else if (courseKey === 'voc-hitech') lastVocPathway = false;
   if (cl.c_liberal && courseKey !== 'voc-hitech') {   // v1.9.4: 하이테크과정은 교양교과 검수항목 삭제(교양교과는 선택 편성)
     if (std.liberalAllowed === false) {
       // 하이테크과정 등: 원칙적으로 교양교과 편성 불가(과정평가형자격 운영학과는 세부기준에서 liberalAllowed를 true로 바꿔 예외 적용)
@@ -2359,7 +2366,7 @@ function saveCheckResultToHistory(courseKey) {
       년도: info.년도 || '', 캠퍼스: info.캠퍼스 || '', 과정: info.과정 || lastCheck.courseName || '',
       대학: info.대학 || lookupUnivByCampus(info.캠퍼스) || '', 계열: info.계열 || '', 학과: info.학과 || '', 전공: info.전공 || '',
     },
-    pathwayEval: false,   // 과정평가형 여부(체크박스, 검수내역 화면에서 직접 설정)
+    pathwayEval: (courseKey === 'voc-hitech' && lastVocPathway) ? true : false,   // 과정평가형 여부(체크박스, 검수내역 화면에서 직접 설정)
     remark: '',           // 비고(검수내역 화면에서 직접 입력)
     trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
     allPass: lastCheck.allPass,
