@@ -1564,8 +1564,11 @@ function renderVocTechResult(courseKey, res) {
   const info = res.info || {};
   const infoItem = (k, v) => `<div class="info-item"><span class="ik">${k}</span><span class="iv">${esc(v || '-')}</span></div>`;
   const rowTr = (c, i) => `<tr>
-    <td>${i + 1}</td><td>${esc(c.gwan || '-')}</td><td class="rc-name">${esc(c.name)}</td>
-    <td class="rc-n">${c.semester || '-'}</td><td class="rc-n">${c.credit}</td></tr>`;
+    <td>${i + 1}</td><td>${esc(c.gwan || '이론')}</td><td class="rc-name">${esc(c.name)}</td>
+    <td class="rc-n">${c.ncsHours !== '' && c.ncsHours != null ? c.ncsHours : '-'}</td>
+    <td class="rc-n">${c.semTotal != null ? c.semTotal : '-'}</td>
+    <td class="rc-n">${c.semester === '1' ? c.credit : '-'}</td>
+    <td class="rc-n">${c.semester === '2' ? c.credit : '-'}</td></tr>`;
   $('#roadmapResult').innerHTML = `
     <div class="panel-head" style="border:0;padding:18px 0 12px"><h2>교육운영계획서 정보</h2></div>
     <div class="panel info-card"><div class="info-grid">
@@ -1574,16 +1577,16 @@ function renderVocTechResult(courseKey, res) {
       ${infoItem('과정', info.과정)}
       ${infoItem('계열', info.계열)}
       ${infoItem('학과', info.학과)}
-      ${infoItem('전공', info.전공)}
+      ${infoItem('직종', info.전공)}
     </div></div>
     <div class="panel-head" style="border:0;padding:18px 0 12px">
       <h2>교과과정 보기</h2>
-      <span class="desc">${res.startPage}페이지 마.교과목구성 · 총 ${res.courses.length}개 행(학기별 시간 포함)</span>
+      <span class="desc">${res.startPage}페이지 마.교과목구성 · 총 ${res.courses.length}개 행(NCS적용시간·편성시간 계/1학기/2학기 포함)</span>
     </div>
     <div class="panel" style="overflow-x:auto">
       <table class="rc-table">
-        <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>학기</th><th>편성시간</th></tr></thead>
-        <tbody>${res.courses.map(rowTr).join('') || '<tr><td colspan="5" class="rc-empty">해당 교과 없음</td></tr>'}</tbody>
+        <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>NCS적용시간</th><th>편성시간(계)</th><th>편성시간(1학기)</th><th>편성시간(2학기)</th></tr></thead>
+        <tbody>${res.courses.map(rowTr).join('') || '<tr><td colspan="7" class="rc-empty">해당 교과 없음</td></tr>'}</tbody>
       </table>
     </div>
     ${res.narrative && res.narrative.industrialAi ? `
@@ -2016,7 +2019,7 @@ function runCheck(courseKey) {
 
   // 저장용 보관
   const courseName = (findCourse(courseKey) || {}).course ? findCourse(courseKey).course.name : courseKey;
-  lastCheck = { checks, allPass, passCount, courseName, info: lastDocInfo };
+  lastCheck = { checks, allPass, passCount, courseName, courseKey, info: lastDocInfo };
 
   $('#resultArea').innerHTML = `
     <div class="panel-head" style="border:0;padding:8px 0 14px">
@@ -2210,7 +2213,7 @@ function renderHistory() {
         <div class="panel" style="overflow-x:auto">
           <table class="vtable">
             <thead><tr>
-              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th>${historyFilter.cat === 'vocational' ? '<th style="width:100px">구분(시간)</th>' : ''}<th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
+              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th>${historyFilter.cat === 'vocational' ? '<th style="width:100px">구분(시간)</th>' : ''}<th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>
               <th style="width:80px">과정평가형</th><th>저장일시</th><th style="width:70px">판정</th><th style="width:70px">충족률</th><th style="width:150px">비고</th><th style="width:130px">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2242,7 +2245,7 @@ function exportHistoryToExcel() {
   const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
   if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
-    ? ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고']
+    ? ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '직종', '과정평가형', '저장일시', '판정', '충족률', '비고']
     : ['순번', '과정', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
@@ -2324,7 +2327,7 @@ function renderHistoryDetail(id) {
         <table class="vtable" style="border:0">
           <tr><th style="width:90px">년도</th><td>${esc(r.info.년도 || '-')}</td><th style="width:90px">캠퍼스</th><td>${esc(r.info.캠퍼스 || '-')}</td></tr>
           <tr><th>과정</th><td>${esc(r.info.과정 || r.courseName)}</td><th>계열</th><td>${esc(r.info.계열 || '-')}</td></tr>
-          <tr><th>학과</th><td>${esc(r.info.학과 || '-')}</td><th>전공</th><td>${esc(r.info.전공 || '-')}</td></tr>
+          <tr><th>학과</th><td>${esc(r.info.학과 || '-')}</td><th>${historyCatKey(r) === 'vocational' ? '직종' : '전공'}</th><td>${esc(r.info.전공 || '-')}</td></tr>
           <tr><th>저장일시</th><td colspan="3">${esc(r.savedAt)}</td></tr>
         </table>
       </div>
@@ -2405,7 +2408,7 @@ function buildReportHtml() {
     <table class="rep-info">
       <tr><th>년도</th><td>${esc(info.년도 || '-')}</td><th>캠퍼스</th><td>${esc(info.캠퍼스 || '-')}</td></tr>
       <tr><th>과정</th><td>${esc(info.과정 || '-')}</td><th>계열</th><td>${esc(info.계열 || '-')}</td></tr>
-      <tr><th>학과</th><td>${esc(info.학과 || '-')}</td><th>전공</th><td>${esc(info.전공 || '-')}</td></tr>
+      <tr><th>학과</th><td>${esc(info.학과 || '-')}</td><th>${c.courseKey === 'voc-tech' ? '직종' : '전공'}</th><td>${esc(info.전공 || '-')}</td></tr>
       <tr><th>검수일시</th><td colspan="3">${nowStamp()}</td></tr>
     </table>
     <div class="rep-verdict ${c.allPass ? 'pass' : 'fail'}">종합 판정 : ${c.allPass ? '적합' : '부적합'} (${c.passCount}/${c.checks.length} 항목 충족)</div>

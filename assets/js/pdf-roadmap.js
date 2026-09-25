@@ -385,7 +385,7 @@ async function analyzeRoadmap(file, locationText, startYear, aiPageRange) {
  * 전문기술과정 "마.교과목구성" 표 전용 분석기 (시간총량 기반, 학위과정 로드맵과 열 구조가 다름)
  * ========================================================================= */
 const VOC_BOUNDS = { GWAN: [55, 100], NAME: [100, 200], HOURS: [200, 225],
-  SEM_TOTAL: [400, 430], SEM1: [430, 460], SEM2: [460, 500] };
+  NCS_APPLIED: [370, 400], SEM_TOTAL: [400, 430], SEM1: [430, 460], SEM2: [460, 500] };
 const VOC_GWAN_LABELS = ['교양교과', '기초기술교과', '계열공통교과', '특화전공교과'];
 
 function vocInRange(x, r) { return x >= r[0] && x < r[1]; }
@@ -421,6 +421,12 @@ function vocRowText(row, range) {
 }
 
 /* 한 페이지에서 "마.교과목구성" 표의 교과목 행을 추출 */
+/* 표 라벨(정식 4구분) → 화면 표시용 축약 라벨 */
+const VOC_GWAN_DISPLAY = {
+  '교양교과': '교양교과', '기초기술교과': '기초기술교과',
+  '계열공통교과': '계열공통', '특화전공교과': '특화전공',
+};
+
 function extractVocTechCourses(items) {
   const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
   // 1) 구분(교양교과 등) 레이블 위치 수집 — 세로 병합 셀이라 그룹 중간쯤에 한 번만 나타남
@@ -432,10 +438,11 @@ function extractVocTechCourses(items) {
   });
   labelPos.sort((a, b) => a.top - b.top);
   function gwanAt(top) {
-    if (!labelPos.length) return '';
-    let idx = 0;
+    if (!labelPos.length) return '이론';
+    let idx = -1;
     for (let i = 0; i < labelPos.length; i++) { if (top >= labelPos[i].top) idx = i; }
-    return labelPos[idx].label;
+    if (idx === -1) return '이론';                     // 첫 구분 라벨보다 위쪽(표 맨 위 NCS 서술행 등)
+    return VOC_GWAN_DISPLAY[labelPos[idx].label] || labelPos[idx].label;
   }
 
   const courses = [];
@@ -444,14 +451,18 @@ function extractVocTechCourses(items) {
     const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
     if (!name || !isNumStr(hoursStr)) return;
     if (name === '소계' || name === '총계') return;
+    const ncsStr = vocRowText(r, VOC_BOUNDS.NCS_APPLIED || VOC_BOUNDS.SEM_TOTAL).trim();
+    const semTotalStr = vocRowText(r, VOC_BOUNDS.SEM_TOTAL).trim();
     const sem1Str = vocRowText(r, VOC_BOUNDS.SEM1).trim();
     const sem2Str = vocRowText(r, VOC_BOUNDS.SEM2).trim();
+    const ncsHours = isNumStr(ncsStr) ? Number(ncsStr) : '';
+    const semTotal = isNumStr(semTotalStr) ? Number(semTotalStr) : Number(hoursStr);
     const sem1 = isNumStr(sem1Str) ? Number(sem1Str) : 0;
     const sem2 = isNumStr(sem2Str) ? Number(sem2Str) : 0;
     const gwan = gwanAt(r.top);
-    if (sem1 > 0) courses.push({ name, gwan, semester: '1', credit: sem1 });
-    if (sem2 > 0) courses.push({ name, gwan, semester: '2', credit: sem2 });
-    if (sem1 <= 0 && sem2 <= 0) courses.push({ name, gwan, semester: '', credit: Number(hoursStr) });
+    if (sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours, semTotal, credit: sem1 });
+    if (sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours, semTotal, credit: sem2 });
+    if (sem1 <= 0 && sem2 <= 0) courses.push({ name, gwan, semester: '', ncsHours, semTotal, credit: Number(hoursStr) });
   });
   return courses;
 }
