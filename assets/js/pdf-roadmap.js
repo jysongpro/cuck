@@ -99,7 +99,7 @@ function extractDocInfo(lines) {
   const find = (re) => { for (const l of lines) { const m = l.match(re); if (m) return (m[1] || '').trim(); } return ''; };
   const 과정 = find(/^과정[:：]?(.+)$/);
   const 계열 = find(/^계열[:：]?(.+)$/);
-  const 전공 = find(/^전공[:：]?(.+)$/);
+  const 전공 = find(/^전공[:：]?(.+)$/) || find(/^직종[:：]?(.+)$/);
   // 학과명: 표지의 "교육운영계획서" 바로 위 줄(괄호 안) 단어.
   //   ※ 이름 글자와 괄호 '(' ')'가 다른 baseline(줄)으로 분리 추출될 수 있어,
   //     날짜줄 전까지 윗줄 텍스트를 모아 괄호·공백을 제거한다.
@@ -504,6 +504,18 @@ async function analyzeVocTech(file, locationText, aiPageRange) {
   }
   if (!courses.length) throw new Error('표는 찾았지만 교과목 데이터를 읽어오지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
 
+  // 구분별(교양교과/기초기술교과/계열공통/특화전공) 편성시간 합계 + 총계
+  const VOC_GROUP_ORDER = ['교양교과', '기초기술교과', '계열공통', '특화전공'];
+  const groupSum = {};
+  VOC_GROUP_ORDER.forEach(g => { groupSum[g] = 0; });
+  let grandTotal = 0;
+  courses.forEach(c => {
+    const g = VOC_GROUP_ORDER.includes(c.gwan) ? c.gwan : null;
+    if (g) groupSum[g] += (c.credit || 0);
+    grandTotal += (c.credit || 0);
+  });
+  const summary = { groups: VOC_GROUP_ORDER.map(g => ({ label: g, hours: groupSum[g] })), total: grandTotal };
+
   let narrative = null;
   if (aiPageRange) {
     try {
@@ -512,5 +524,5 @@ async function analyzeVocTech(file, locationText, aiPageRange) {
     } catch (e) { narrative = null; }
   }
 
-  return { info, courses, startPage, narrative };
+  return { info, courses, startPage, narrative, summary };
 }

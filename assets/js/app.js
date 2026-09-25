@@ -1583,10 +1583,18 @@ function renderVocTechResult(courseKey, res) {
       <h2>교과과정 보기</h2>
       <span class="desc">${res.startPage}페이지 마.교과목구성 · 총 ${res.courses.length}개 행(NCS적용시간·편성시간 계/1학기/2학기 포함)</span>
     </div>
+    ${res.summary ? `
+    <div class="stat-row">${res.summary.groups.map(g => `<div class="stat"><div class="s-label">${esc(g.label)}</div><div class="s-val">${g.hours}<small> 시간</small></div></div>`).join('')}
+      <div class="stat"><div class="s-label">총계</div><div class="s-val">${res.summary.total}<small> 시간</small></div></div>
+    </div>` : ''}
     <div class="panel" style="overflow-x:auto">
       <table class="rc-table">
         <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>NCS적용시간</th><th>편성시간(계)</th><th>편성시간(1학기)</th><th>편성시간(2학기)</th></tr></thead>
-        <tbody>${res.courses.map(rowTr).join('') || '<tr><td colspan="7" class="rc-empty">해당 교과 없음</td></tr>'}</tbody>
+        <tbody>${res.courses.map(rowTr).join('')}
+        ${res.summary ? res.summary.groups.map(g => `<tr class="rc-grp"><td colspan="4">${esc(g.label)} 소계</td><td class="rc-n">${g.hours}</td><td></td><td></td></tr>`).join('') : ''}
+        ${res.summary ? `<tr class="rc-total"><td colspan="4">총계</td><td class="rc-n">${res.summary.total}</td><td></td><td></td></tr>` : ''}
+        ${res.courses.length === 0 ? '<tr><td colspan="7" class="rc-empty">해당 교과 없음</td></tr>' : ''}
+        </tbody>
       </table>
     </div>
     ${res.narrative && res.narrative.industrialAi ? `
