@@ -1528,7 +1528,8 @@ async function runRoadmapAnalyze(courseKey) {
   if (btn) btn.disabled = true;
   try {
     if (isVocTimeBased(courseKey)) {
-      const res = await analyzeVocTech(selectedPdf, loc, aiPages, courseKey);
+      const trackKey = (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '';
+      const res = await analyzeVocTech(selectedPdf, loc, aiPages, courseKey, trackKey);
       msg.innerHTML = '';
       lastDocInfo = res.info || {};
       lastNarrative = res.narrative || {};
@@ -1564,7 +1565,15 @@ async function runRoadmapAnalyze(courseKey) {
     const ra = $('#resultArea'); if (ra) ra.innerHTML = '';
     toast(res.courses.length + '개 교과목을 읽어왔습니다. [세부기준 체크]로 검수하세요.');
   } catch (e) {
-    msg.innerHTML = `<div class="notice"><span class="n-ico">${ICON.info}</span><div>${esc(e.message || '분석에 실패했습니다.')}</div></div>`;
+    if (e && e.vocBlocked) {
+      // 3학기 운영 등 이 화면에서 검수할 수 없는 문서 — 일반 오류와 구분되는 경고색 전용 메시지 박스로 안내하고 분석을 중단
+      msg.innerHTML = `<div class="notice warn" style="padding:16px 18px;font-size:14px;line-height:1.6">
+        <span class="n-ico">${ICON.warn || '⚠'}</span>
+        <div><b>이 문서는 현재 화면에서 검수할 수 없습니다</b><br>${esc(e.message)}</div>
+      </div>`;
+    } else {
+      msg.innerHTML = `<div class="notice"><span class="n-ico">${ICON.info}</span><div>${esc(e.message || '분석에 실패했습니다.')}</div></div>`;
+    }
   } finally {
     if (btn) btn.disabled = false;
   }
