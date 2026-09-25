@@ -386,7 +386,9 @@ async function analyzeRoadmap(file, locationText, startYear, aiPageRange) {
  * ========================================================================= */
 const VOC_BOUNDS = { GWAN: [55, 100], NAME: [100, 200], HOURS: [200, 225],
   NCS_APPLIED: [370, 400], SEM_TOTAL: [400, 430], SEM1: [430, 460], SEM2: [460, 500] };
-const VOC_GWAN_LABELS = ['교양교과', '기초기술교과', '계열공통교과', '특화전공교과'];
+// 주의: 실제 PDF에는 "계열공통", "특화전공"과 같이 "교과" 없이 인쇄되는 경우가 있어,
+// 실제 표기와 일치하는 문자열로 맞추고(끝에 "교과"가 붙는 경우도 despace 후 includes()로 여분히 잡힌다)
+const VOC_GWAN_LABELS = ['교양교과', '기초기술교과', '계열공통', '특화전공'];
 
 function vocInRange(x, r) { return x >= r[0] && x < r[1]; }
 
@@ -425,7 +427,7 @@ function vocRowText(row, range) {
 /* 표에 실제 인쇄된 라벨(좌: 정식 4구분 표기) → 화면에 표시할 축약 라벨(우) */
 const VOC_GWAN_DISPLAY = {
   '교양교과': '교양교과', '기초기술교과': '기초기술',
-  '계열공통교과': '계열공통', '특화전공교과': '특화전공',
+  '계열공통': '계열공통', '특화전공': '특화전공',
 };
 /* 화면 표시 축약 라벨 목록(= 소계/정렬 기준 순서) */
 const VOC_GROUP_ORDER = ['교양교과', '기초기술', '계열공통', '특화전공'];
