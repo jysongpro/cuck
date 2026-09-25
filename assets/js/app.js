@@ -1569,17 +1569,20 @@ function renderVocTechResult(courseKey, res) {
     <td class="rc-n">${c.semTotal != null ? c.semTotal : '-'}</td>
     <td class="rc-n">${c.semester === '1' ? c.credit : '-'}</td>
     <td class="rc-n">${c.semester === '2' ? c.credit : '-'}</td></tr>`;
-  // 총계를 맨 위에, 이후 구분별(교양교과→기초기술→계열공통→특화전공) 순으로 그룹의 첫줄에 소계를 배치하고 그 아래에 해당 교과목을 나열
+  // 총계를 맨 위에, 이후 구분별(교양교과→기초기술→계열공통→특화전공) 순으로 그룹의 첫줄에 소계를 배치하고 그 아래에 해당 교과목을 나열.
+  // 소계/총계는 PDF에 이미 인쇄된 NCS적용/계/1학기/2학기 값을 그대로 사용해 표시
+  const fmt = v => (v !== '' && v != null) ? v : '-';
   let bodyHtml = '';
-  if (res.summary) {
-    bodyHtml += `<tr class="rc-total"><td colspan="4">총계</td><td class="rc-n">${res.summary.total}</td><td></td><td></td></tr>`;
+  if (res.summary && res.summary.totalInfo) {
+    const t = res.summary.totalInfo;
+    bodyHtml += `<tr class="rc-total"><td colspan="3">총계</td><td class="rc-n">${fmt(t.ncsHours)}</td><td class="rc-n">${fmt(t.hours)}</td><td class="rc-n">${fmt(t.sem1)}</td><td class="rc-n">${fmt(t.sem2)}</td></tr>`;
   }
   let seq = 1;
   const groupOrder = res.summary ? res.summary.groups.map(g => g.label) : ['교양교과', '기초기술', '계열공통', '특화전공'];
   groupOrder.forEach(label => {
     const grp = res.summary ? res.summary.groups.find(g => g.label === label) : null;
     const groupCourses = res.courses.filter(c => c.gwan === label);
-    bodyHtml += `<tr class="rc-grp"><td colspan="4">${esc(label)} 소계</td><td class="rc-n">${grp ? grp.hours : '-'}</td><td></td><td></td></tr>`;
+    bodyHtml += `<tr class="rc-grp"><td colspan="3">${esc(label)} 소계</td><td class="rc-n">${grp ? fmt(grp.ncsHours) : '-'}</td><td class="rc-n">${grp ? fmt(grp.hours) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem1) : '-'}</td><td class="rc-n">${grp ? fmt(grp.sem2) : '-'}</td></tr>`;
     bodyHtml += groupCourses.map(c => rowTr(c, seq++ - 1)).join('');
   });
   const ungrouped = res.courses.filter(c => !groupOrder.includes(c.gwan));

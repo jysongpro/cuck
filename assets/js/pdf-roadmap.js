@@ -432,47 +432,55 @@ const VOC_GWAN_DISPLAY = {
 /* 화면 표시 축약 라벨 목록(= 소계/정렬 기준 순서) */
 const VOC_GROUP_ORDER = ['교양교과', '기초기술', '계열공통', '특화전공'];
 
-function extractVocTechCourses(items) {
-  const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
-  // 구분(교양교과 등) 레이블 위치 수집 — 세로 병합 셀이라 그룹 첫 줄에 한 번만 나타남.
-  // 요청대로 각 라벨이 "첫 줄에 잡히는" 순간의 값만으로 판단하고, 이후 줄바꿈 조각까지
-  // 이어붙여 추측하지 않는다(과도한 재구성은 오히려 오탐을 유발할 수 있음).
-  const labelPos = [];
-  const seen = new Set();
-  rows.forEach(r => {
-    const t = despace(vocRowText(r, VOC_BOUNDS.GWAN));
-    const hit = VOC_GWAN_LABELS.find(l => t.includes(l));
-    if (hit && !seen.has(hit)) { labelPos.push({ top: r.top, label: hit }); seen.add(hit); }
-  });
-  labelPos.sort((a, b) => a.top - b.top);
-  function gwanAt(top) {
-    if (!labelPos.length) return '';
-    let idx = -1;
-    for (let i = 0; i < labelPos.length; i++) { if (top >= labelPos[i].top) idx = i; }
-    if (idx === -1) return '';                     // 첫 구분 라벨보다 위쪽(표 맨 위 NCS 서술행 등)
-    return VOC_GWAN_DISPLAY[labelPos[idx].label] || labelPos[idx].label;
-  }
+/* 구분 셀이 세로 병합되어 있어 라벨 문자열이 그룹 중간(혹은 끝쪽)에 찍히는 경우가 많아, 라벨 위치로 구분을 판단하면
+ * 그룹 초반부 교과목이 이전 구분으로 잘못 붙는 오류가 발생한다.
+ * 대신 표에 이미 인쇄된 "소계" 행이 항상 그 구분의 교과목 바로 위에 먼저 나오고(예: 소계(60)→교양교과 3개교과,
+ * 소계(110)→기초기술 3개교과 …), 그 순서는 VOC_GROUP_ORDER와 항상 일치하므로,
+ * "소계" 행을 만날 때마다 다음 구분으로 넘어가면서 그 이후 교과목을 배치한다.
+ * state.groupIdx를 호출자(analyzeVocTech)가 여러 페이지에 걸쳐 공유해야, 표가 페이지를 넘어가도 구분이 유지된다. */
+function vocReadCounts(r) {
+  const ncsStr = vocRowText(r, VOC_BOUNDS.NCS_APPLIED).trim();
+  const semTotalStr = vocRowText(r, VOC_BOUNDS.SEM_TOTAL).trim();
+  const sem1Str = vocRowText(r, VOC_BOUNDS.SEM1).trim();
+  const sem2Str = vocRowText(r, VOC_BOUNDS.SEM2).trim();
+  return {
+    ncsHours: isNumStr(ncsStr) ? Number(ncsStr) : '',
+    semTotal: isNumStr(semTotalStr) ? Number(semTotalStr) : '',
+    sem1: isNumStr(sem1Str) ? Number(sem1Str) : 0,
+    sem2: isNumStr(sem2Str) ? Number(sem2Str) : 0,
+  };
+}
 
+function extractVocTechCourses(items, state) {
+  const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
   const courses = [];
+  const subtotals = [];
+  let totalRow = null;
   rows.forEach(r => {
     const name = vocRowText(r, VOC_BOUNDS.NAME).trim();
     const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
-    if (!name || !isNumStr(hoursStr)) return;
-    if (name === '소계' || name === '총계') return;
-    const ncsStr = vocRowText(r, VOC_BOUNDS.NCS_APPLIED || VOC_BOUNDS.SEM_TOTAL).trim();
-    const semTotalStr = vocRowText(r, VOC_BOUNDS.SEM_TOTAL).trim();
-    const sem1Str = vocRowText(r, VOC_BOUNDS.SEM1).trim();
-    const sem2Str = vocRowText(r, VOC_BOUNDS.SEM2).trim();
-    const ncsHours = isNumStr(ncsStr) ? Number(ncsStr) : '';
-    const semTotal = isNumStr(semTotalStr) ? Number(semTotalStr) : Number(hoursStr);
-    const sem1 = isNumStr(sem1Str) ? Number(sem1Str) : 0;
-    const sem2 = isNumStr(sem2Str) ? Number(sem2Str) : 0;
-    const gwan = gwanAt(r.top);
-    if (sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours, semTotal, credit: sem1 });
-    if (sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours, semTotal, credit: sem2 });
-    if (sem1 <= 0 && sem2 <= 0) courses.push({ name, gwan, semester: '', ncsHours, semTotal, credit: Number(hoursStr) });
+    if (!name) return;
+    if (name === '총계') {
+      const cnt = vocReadCounts(r);
+      totalRow = { label: '총계', ncsHours: cnt.ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1, sem2: cnt.sem2 };
+      return;
+    }
+    if (name === '소계') {
+      state.groupIdx++;
+      const label = VOC_GROUP_ORDER[state.groupIdx] || `구분${state.groupIdx + 1}`;
+      const cnt = vocReadCounts(r);
+      subtotals.push({ label, ncsHours: cnt.ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1, sem2: cnt.sem2 });
+      return;
+    }
+    if (!isNumStr(hoursStr)) return;                 // 교과목 데이터 행이 아니면(서술행 등) 무시
+    const cnt = vocReadCounts(r);
+    const gwan = VOC_GROUP_ORDER[state.groupIdx] || '';
+    const semTotal = cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr);
+    if (cnt.sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: cnt.ncsHours, semTotal, credit: cnt.sem1 });
+    if (cnt.sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: cnt.ncsHours, semTotal, credit: cnt.sem2 });
+    if (cnt.sem1 <= 0 && cnt.sem2 <= 0) courses.push({ name, gwan, semester: '', ncsHours: cnt.ncsHours, semTotal, credit: Number(hoursStr) });
   });
-  return courses;
+  return { courses, subtotals, totalRow };
 }
 
 /* 전문기술과정 PDF 분석 진입점 — "마.교과목구성" 표를 찾아 여러 페이지에 걸쳐 교과목을 수집 */
@@ -502,26 +510,43 @@ async function analyzeVocTech(file, locationText, aiPageRange) {
   if (startPage === -1) throw new Error(`분석할 파일 위치("${locationText}")를 PDF에서 찾지 못했습니다. 표 제목이 정확히 일치하는지 확인해 주세요.`);
 
   let courses = [];
+  const subtotalByLabel = {};
+  let totalRow = null;
+  const state = { groupIdx: -1 };
   const maxScan = Math.min(pdf.numPages, startPage + 3);
   for (let p = startPage; p <= maxScan; p++) {
     const page = await pdf.getPage(p);
     const items = await roadmapPageItems(page);
-    const found = extractVocTechCourses(items);
-    if (p > startPage && found.length === 0) break; // 표가 끝난 것으로 판단
-    courses = courses.concat(found);
+    const found = extractVocTechCourses(items, state);
+    if (p > startPage && found.courses.length === 0 && found.subtotals.length === 0 && !found.totalRow) break; // 표가 끝난 것으로 판단
+    courses = courses.concat(found.courses);
+    found.subtotals.forEach(s => { subtotalByLabel[s.label] = s; });
+    if (found.totalRow) totalRow = found.totalRow;
   }
   if (!courses.length) throw new Error('표는 찾았지만 교과목 데이터를 읽어오지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
 
-  // 구분별(교양교과/기초기술/계열공통/특화전공) 편성시간 합계 + 총계
-  const groupSum = {};
-  VOC_GROUP_ORDER.forEach(g => { groupSum[g] = 0; });
-  let grandTotal = 0;
-  courses.forEach(c => {
-    const g = VOC_GROUP_ORDER.includes(c.gwan) ? c.gwan : null;
-    if (g) groupSum[g] += (c.credit || 0);
-    grandTotal += (c.credit || 0);
+  // 구분별(교양교과/기초기술/계열공통/특화전공) 소계는 PDF에 이미 인쇄된 값(계/1학기/2학기/NCS적용)을 그대로 사용하고,
+  // 만약 해당 구분의 소계 행을 읽어오지 못한 경우에만 안전망(fallback)으로 교과목 합계로 대체한다.
+  const groups = VOC_GROUP_ORDER.map(label => {
+    const sub = subtotalByLabel[label];
+    if (sub) return { label, hours: sub.total, ncsHours: sub.ncsHours, sem1: sub.sem1, sem2: sub.sem2 };
+    const own = courses.filter(c => c.gwan === label);
+    const uniq = {};
+    own.forEach(c => { const k = c.name; if (!uniq[k]) uniq[k] = c.semTotal || 0; });
+    const hours = Object.values(uniq).reduce((s, v) => s + v, 0);
+    const sem1 = own.filter(c => c.semester === '1').reduce((s, c) => s + (c.credit || 0), 0);
+    const sem2 = own.filter(c => c.semester === '2').reduce((s, c) => s + (c.credit || 0), 0);
+    return { label, hours, ncsHours: '', sem1, sem2 };
   });
-  const summary = { groups: VOC_GROUP_ORDER.map(g => ({ label: g, hours: groupSum[g] })), total: grandTotal };
+  const total = totalRow
+    ? { hours: totalRow.total, ncsHours: totalRow.ncsHours, sem1: totalRow.sem1, sem2: totalRow.sem2 }
+    : {
+        hours: groups.reduce((s, g) => s + (g.hours || 0), 0),
+        ncsHours: groups.reduce((s, g) => s + (isNumStr(String(g.ncsHours)) ? Number(g.ncsHours) : 0), 0),
+        sem1: groups.reduce((s, g) => s + (g.sem1 || 0), 0),
+        sem2: groups.reduce((s, g) => s + (g.sem2 || 0), 0),
+      };
+  const summary = { groups, total: total.hours, totalInfo: total };
 
   let narrative = null;
   if (aiPageRange) {
