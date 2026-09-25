@@ -444,13 +444,63 @@ function vocGroupOrderFor(courseKey) { return courseKey === 'voc-hitech' ? VOC_G
  * 소계(110)→기초기술 3개교과 …), 그 순서는 VOC_GROUP_ORDER와 항상 일치하므로,
  * "소계" 행을 만날 때마다 다음 구분으로 넘어가면서 그 이후 교과목을 배치한다.
  * state.groupIdx를 호출자(analyzeVocTech)가 여러 페이지에 걸쳐 공유해야, 표가 페이지를 넘어가도 구분이 유지된다. */
-function vocReadCounts(r) {
-  const ncsStr = vocRowText(r, VOC_BOUNDS.NCS_APPLIED).trim();
-  const semTotalStr = vocRowText(r, VOC_BOUNDS.SEM_TOTAL).trim();
-  const sem1Str = vocRowText(r, VOC_BOUNDS.SEM1).trim();
-  const sem2Str = vocRowText(r, VOC_BOUNDS.SEM2).trim();
+/* 표의 NCS적용시간·편성시간(계/1학기/2학기/3학기) 컬럼 x좌표는 학과·직종·과정(전문기술/하이테크)마다 실제 인쇄 위치가
+ * 조금씩 달라, 고정된 픽셀 범위(VOC_BOUNDS)로는 일부 문서에서 값이 다른 컬럼으로 밀려 읽히거나 아예 인식되지 않는다.
+ * 이를 막기 위해, 각 페이지의 실제 헤더 텍스트("NCS", "계", "1학기", "2학기", "3학기", "비고") 위치를 직접 찾아
+ * 그 페이지에 맞는 컬럼 경계를 동적으로 계산한다. 헤더를 찾지 못한 페이지(표 헤더가 없는 이어지는 페이지 등)는
+ * 이전에 감지된 경계를 그대로 이어받아 사용한다(호출자가 마지막 성공 경계를 캐시해 넘겨줌). */
+function detectVocTimeBounds(items) {
+  const norm = (s) => despace(s);
+  let ncsItem = null, semTotalItem = null, sem1Item = null, sem2Item = null, sem3Item = null, remarkItem = null;
+  items.forEach(it => {
+    const t = norm(it.str);
+    const x = it.cx != null ? it.cx : it.x;
+    if (it.top > 200) return;                          // 헤더는 항상 표 상단(첫 데이터 행보다 위)에만 존재
+    if (t === 'NCS' && !ncsItem) ncsItem = { x, top: it.top };
+    if (t === '1학기' && !sem1Item) sem1Item = { x, top: it.top };
+    if (t === '2학기' && !sem2Item) sem2Item = { x, top: it.top };
+    if (t === '3학기' && !sem3Item) sem3Item = { x, top: it.top };
+    if (t === '비고' && !remarkItem) remarkItem = { x, top: it.top };
+  });
+  // "계"는 소계/총계 행에도 등장하므로, 반드시 1학기/2학기와 같은 세로줄(top 오차 ±3) 위에 있는 것만 헤더로 인정한다.
+  if (sem1Item) {
+    items.forEach(it => {
+      if (norm(it.str) === '계' && Math.abs(it.top - sem1Item.top) <= 3 && !semTotalItem) {
+        semTotalItem = { x: it.cx != null ? it.cx : it.x, top: it.top };
+      }
+    });
+  }
+  if (!ncsItem || !semTotalItem || !sem1Item || !sem2Item) return null;   // 정보 부족 — 호출자가 이전 경계 또는 기본값으로 대체
+
+  const cols = [
+    { key: 'NCS_APPLIED', x: ncsItem.x },
+    { key: 'SEM_TOTAL',   x: semTotalItem.x },
+    { key: 'SEM1',        x: sem1Item.x },
+    { key: 'SEM2',        x: sem2Item.x },
+  ];
+  if (sem3Item) cols.push({ key: 'SEM3', x: sem3Item.x });
+  cols.sort((a, b) => a.x - b.x);
+  const rightEdge = remarkItem ? remarkItem.x : (cols[cols.length - 1].x + 60);
+
+  const bounds = {};
+  for (let i = 0; i < cols.length; i++) {
+    const left = i === 0 ? cols[i].x - 25 : (cols[i - 1].x + cols[i].x) / 2;
+    const right = i === cols.length - 1 ? Math.min(rightEdge, cols[i].x + 35) : (cols[i - 0] && cols[i + 1] ? (cols[i].x + cols[i + 1].x) / 2 : cols[i].x + 30);
+    bounds[cols[i].key] = [left, right];
+  }
+  return bounds;
+}
+
+function vocReadCounts(r, bounds) {
+  const b = bounds || VOC_BOUNDS;
+  const ncsStr = vocRowText(r, b.NCS_APPLIED).trim();
+  const semTotalStr = vocRowText(r, b.SEM_TOTAL).trim();
+  const sem1Str = vocRowText(r, b.SEM1).trim();
+  const sem2Str = vocRowText(r, b.SEM2).trim();
+  const sem3Str = b.SEM3 ? vocRowText(r, b.SEM3).trim() : '';
   const sem1 = isNumStr(sem1Str) ? Number(sem1Str) : 0;
-  const sem2 = isNumStr(sem2Str) ? Number(sem2Str) : 0;
+  // 3학기 표(10개월 과정 등)가 있는 경우, 3학기 편성시간은 2학기 값에 합산해 반영한다(화면은 1·2학기 2열만 지원).
+  const sem2 = (isNumStr(sem2Str) ? Number(sem2Str) : 0) + (isNumStr(sem3Str) ? Number(sem3Str) : 0);
   // "편성시간(계)" 컬럼이 셀 병합/좌표 오차로 0(또는 미인식)으로 읽히는 경우, 1·2학기 값의 합으로 보정한다.
   // (실제 표에서는 계 = 1학기 + 2학기가 항상 성립하므로 안전한 대체값이다.)
   let semTotal = isNumStr(semTotalStr) ? Number(semTotalStr) : '';
@@ -462,7 +512,7 @@ function vocReadCounts(r) {
   return { ncsHours, semTotal, sem1, sem2 };
 }
 
-function extractVocTechCourses(items, state, groupOrder) {
+function extractVocTechCourses(items, state, groupOrder, bounds) {
   const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
   // 능력단위가 2~4개인 교과목은 교과목명·편성시간(HOURS)만 자기 행에 있고, 능력단위별 NCS적용시간·학기시간은
   // 그 위/아래의 별도 행(능력단위분류번호가 적힌 행)에 나뉘어 인쇄된다. 이런 "능력단위 서브행"은 이름이 없고
@@ -470,7 +520,7 @@ function extractVocTechCourses(items, state, groupOrder) {
   const parsed = rows.map(r => {
     const name = vocRowText(r, VOC_BOUNDS.NAME).trim();
     const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
-    const cnt = vocReadCounts(r);
+    const cnt = vocReadCounts(r, bounds);
     return { top: r.top, name, hoursStr, cnt };
   });
   const boundaries = parsed
@@ -556,11 +606,14 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey) {
   const subtotalByLabel = {};
   let totalRow = null;
   const state = { groupIdx: -1 };
+  let vocBoundsCache = null;   // 표 헤더가 없는 이어지는 페이지에서도 직전에 감지한 컬럼 경계를 계속 사용
   const maxScan = Math.min(pdf.numPages, startPage + 3);
   for (let p = startPage; p <= maxScan; p++) {
     const page = await pdf.getPage(p);
     const items = await roadmapPageItems(page);
-    const found = extractVocTechCourses(items, state, vocGroupOrderFor(courseKey));
+    const detected = detectVocTimeBounds(items);
+    if (detected) vocBoundsCache = detected;
+    const found = extractVocTechCourses(items, state, vocGroupOrderFor(courseKey), vocBoundsCache || VOC_BOUNDS);
     if (p > startPage && found.courses.length === 0 && found.subtotals.length === 0 && !found.totalRow) break; // 표가 끝난 것으로 판단
     courses = courses.concat(found.courses);
     found.subtotals.forEach(s => { subtotalByLabel[s.label] = s; });

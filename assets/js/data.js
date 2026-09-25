@@ -285,7 +285,7 @@ const COURSE_SPECS = {
     checkTitle: '하이테크과정 교과과정 검수',
     durationTracks: {
       '600': {
-        trackLabel: '융합모듈제(학기당 600시간)',
+        trackLabel: '융합모듈제',
         fusionModule: true,   // 학기별(600h×2) 검수 로직을 별도로 적용하는 하이테크 전용 트랙
         standardGroups: [
           {
@@ -616,7 +616,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정개편 세부기준 검수 지원 도구',
-  version: '1.8.3',
+  version: '1.8.4',
   developer: '학교법인 한국폴리텍대학 AI혁신부',
 };
 
