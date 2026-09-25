@@ -156,6 +156,9 @@ const LIBERAL_GROUPS = [
   { key: 'econ',        label: '경제생활활용능력',      core: true },
   { key: 'digitalai',   label: '디지털AI능력',          core: false },
 ];
+// 하이테크과정(voc-hitech)은 교양교과/산업안전교과/산업AI교과/AI활용교과 목록을 전문기술과정(voc-tech)과 "동일하게" 공유한다.
+// 저장/조회 시 courseKey를 voc-tech로 정규화해 두 과정이 같은 데이터를 참조하도록 한다.
+function vocAliasKey(courseKey) { return courseKey === 'voc-hitech' ? 'voc-tech' : courseKey; }
 const LiberalArtsStore = {
   all() { try { return JSON.parse(localStorage.getItem(LIBERAL_KEY)) || {}; } catch { return {}; } },
   get(courseKey) {
@@ -281,9 +284,11 @@ function importAllData(ev) {
 }
 const SimpleListStore = {
   all(type) { try { return JSON.parse(localStorage.getItem(SIMPLE_LIST_TYPES[type].storeKey)) || {}; } catch { return {}; } },
-  get(type, courseKey) { const saved = this.all(type)[courseKey]; return saved || []; },
+  // 하이테크과정(voc-hitech)은 산업AI교과/AI활용교과 교과목 목록을 전문기술과정(voc-tech)과 완전히 공유한다(vocAliasKey).
+  get(type, courseKey) { const saved = this.all(type)[vocAliasKey(courseKey)]; return saved || []; },
   save(type, courseKey, list) {
-    const all = this.all(type); all[courseKey] = list;
+    const key = vocAliasKey(courseKey);
+    const all = this.all(type); all[key] = list;
     localStorage.setItem(SIMPLE_LIST_TYPES[type].storeKey, JSON.stringify(all));
   },
   isSet(type, courseKey) { const l = this.get(type, courseKey); return l.some(r => (r.name || '').trim()); },
@@ -732,10 +737,10 @@ function renderSpecStandards(courseKey, found) {
           : '아직 저장 전이라 <b>공식 문서 기본값</b>이 표시됩니다.'}</div></div>
 
       <div class="toolbar" style="margin-bottom:18px">
-        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/liberal/${courseKey}')">${ICON.set} 교양교과 설정</button>` : ''}
-        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/safety/${courseKey}')">${ICON.set} 산업안전교과 설정</button>` : ''}
-        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/industrialAi/${courseKey}')">${ICON.set} 산업AI교과 설정</button>` : ''}
-        ${['degree-regular','degree-advanced','voc-tech'].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/aiApplied/${courseKey}')">${ICON.set} AI활용교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced', ...VOC_TIME_KEYS].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/liberal/${courseKey}')">${ICON.set} 교양교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced', ...VOC_TIME_KEYS].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/safety/${courseKey}')">${ICON.set} 산업안전교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced', ...VOC_TIME_KEYS].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/industrialAi/${courseKey}')">${ICON.set} 산업AI교과 설정</button>` : ''}
+        ${['degree-regular','degree-advanced', ...VOC_TIME_KEYS].includes(courseKey) ? `<button class="btn btn-soft" onclick="navigate('cat/${cat.key}/simplelist/aiApplied/${courseKey}')">${ICON.set} AI활용교과 설정</button>` : ''}
         <div class="spacer"></div>
         <button class="btn btn-soft" onclick="navigate('cat/${cat.key}/check')">${ICON.check} 교과과정 체크 이동하기 ${ICON.arrow}</button>
       </div>
@@ -761,7 +766,7 @@ function renderSpecStandards(courseKey, found) {
             <div>특정 교과목의 편성 여부를 검수 항목으로 추가합니다. (예: <b>AI와윤리</b> 교과) <b>적용</b>으로 켠 항목만 검수에 반영됩니다.</div></div>
           <div class="panel"><div class="panel-body">
             <div class="rule-table">
-              <div class="rule-head"><span>순번</span><span>검수항목명</span><span>교과목 키워드</span><span>교과구분</span><span>학기</span><span>${courseKey === 'voc-tech' ? '최소시간' : '최소학점'}</span><span>${courseKey === 'voc-tech' ? '최대시간' : '최대학점'}</span><span>편성여부</span><span>그룹명</span><span>그룹조건</span><span>적용조건</span><span>적용</span><span></span></div>
+              <div class="rule-head"><span>순번</span><span>검수항목명</span><span>교과목 키워드</span><span>교과구분</span><span>학기</span><span>${isVocTimeBased(courseKey) ? '최소시간' : '최소학점'}</span><span>${isVocTimeBased(courseKey) ? '최대시간' : '최대학점'}</span><span>편성여부</span><span>그룹명</span><span>그룹조건</span><span>적용조건</span><span>적용</span><span></span></div>
               <div id="ruleRows">${rulesHtml}</div>
             </div>
             <div class="toolbar" style="margin-top:14px">
@@ -850,11 +855,11 @@ function buildCriteriaList(courseKey) {
   Object.values(groupMap2).forEach(g => { g.req = g._parts.join(g.op === 'OR' ? ' 또는 ' : ' 그리고 '); delete g._parts; delete g.op; });
 
   // 교양교과 설정(교양필수교과 검수기준) — 학위과정 전용 항목이므로 전문기술과정(voc-tech)에는 노출하지 않음
-  if (courseKey !== 'voc-tech' && LiberalArtsStore.isSet(courseKey)) {
+  if (!isVocTimeBased(courseKey) && LiberalArtsStore.isSet(courseKey)) {
     const laRule = LiberalCheckRuleStore.get(courseKey);
     if (laRule.checkOffered) items.push({ title: '교양필수교과 편성 여부(역량군별)', req: '설정된 필수교과가 역량군별로 모두 편성', src: '교양교과설정' });
     if (laRule.checkMaxPerGroup) items.push({ title: '교양필수교과 역량군당 편성 수', req: `역량군당 최대 ${laRule.maxPerGroup}과목`, src: '교양교과설정' });
-    if (laRule.checkTotal) items.push({ title: `교양필수교과 총 편성 역량군수/${courseKey === 'voc-tech' ? '시간' : '학점'}`, req: `${laRule.targetGroupCount}개 역량군 · ${laRule.targetTotalCredit}${courseKey === 'voc-tech' ? '시간' : '학점'}`, src: '교양교과설정' });
+    if (laRule.checkTotal) items.push({ title: `교양필수교과 총 편성 역량군수/${isVocTimeBased(courseKey) ? '시간' : '학점'}`, req: `${laRule.targetGroupCount}개 역량군 · ${laRule.targetTotalCredit}${isVocTimeBased(courseKey) ? '시간' : '학점'}`, src: '교양교과설정' });
   }
 
   // 산업안전·산업AI·AI활용 교과편성 확인 — 등록된 경우에만 미리보기에 노출
@@ -976,7 +981,7 @@ function laRulePanelHtml() {
         <label class="switch"><input type="checkbox" id="laR_checkTotal" ${r.checkTotal ? 'checked' : ''}><span class="track"></span><span class="switch-label">적용</span></label>
         <span class="la-rule-label">총 편성 역량군수/학점 검수 · 목표</span>
         <input type="number" min="0" step="1" id="laR_targetGroupCount" value="${esc(r.targetGroupCount)}" style="width:70px"> 역량군 ·
-        <input type="number" min="0" step="1" id="laR_targetTotalCredit" value="${esc(r.targetTotalCredit)}" style="width:70px"> ${laCourseKey === 'voc-tech' ? '시간' : '학점'}
+        <input type="number" min="0" step="1" id="laR_targetTotalCredit" value="${esc(r.targetTotalCredit)}" style="width:70px"> ${isVocTimeBased(laCourseKey) ? '시간' : '학점'}
       </div>
       <div class="toolbar" style="margin-top:12px">
         <button class="btn btn-primary btn-sm" onclick="laSaveRule('${laCourseKey}')">${ICON.ok} 검수기준 저장</button>
@@ -1017,7 +1022,7 @@ function laResetRule(courseKey) {
 }
 
 function laRowHtml(g, type, row, idx) {
-  const unitLabel = laCourseKey === 'voc-tech' ? '시간' : '학점';
+  const unitLabel = isVocTimeBased(laCourseKey) ? '시간' : '학점';
   return `
     <div class="la-row">
       <input type="text" data-g="${g.key}" data-t="${type}" data-i="${idx}" data-k="name" value="${esc(row.name || '')}" placeholder="교과명">
@@ -1124,7 +1129,7 @@ function renderSimpleList(type, courseKey) {
       <div class="toolbar" style="margin-bottom:12px">
         <button class="btn btn-soft" onclick="slToggleRulePanel()">${ICON.set} ${esc(meta.checkLabel)} 검수기준 설정</button>
         <span style="font-size:12.5px;color:var(--c-text-soft)">향후 검수로직(최소 편성 과목수)이 변경될 경우 여기서 수정하세요.</span>
-        ${(courseKey === 'degree-advanced' || courseKey === 'voc-tech') ? `<button class="btn btn-ghost" onclick="slCopyFromRegular('${type}','${courseKey}')">${ICON.set || ''} 학위과정 설정 그대로 가져오기</button>` : ''}
+        ${(courseKey === 'degree-advanced' || isVocTimeBased(courseKey)) ? `<button class="btn btn-ghost" onclick="slCopyFromRegular('${type}','${courseKey}')">${ICON.set || ''} 학위과정 설정 그대로 가져오기</button>` : ''}
       </div>
       <div id="slRulePanel">${slRuleOpen ? slRulePanelHtml() : ''}</div>
       <div class="panel la-group">
@@ -1283,7 +1288,7 @@ function ruleRowHtml(r, i) {
       <input type="text" data-i="${i}" data-k="keyword" value="${esc(r.keyword || '')}" placeholder="예: AI와윤리">
       <select data-i="${i}" data-k="gubun">
         <option value="" ${!r.gubun ? 'selected' : ''}>전체</option>
-        ${courseRulesKey === 'voc-tech' ? `
+        ${isVocTimeBased(courseRulesKey) ? `
         <option value="교양교과" ${r.gubun === '교양교과' ? 'selected' : ''}>교양교과</option>
         <option value="기초기술교과" ${r.gubun === '기초기술교과' ? 'selected' : ''}>기초기술교과</option>
         <option value="계열공통교과" ${r.gubun === '계열공통교과' ? 'selected' : ''}>계열공통교과</option>
@@ -1296,8 +1301,8 @@ function ruleRowHtml(r, i) {
         `}
       </select>
       <input type="text" data-i="${i}" data-k="semester" value="${esc(r.semester || '')}" placeholder="학기(예: 3 또는 학년-학기형식 2-1)" title="편성 학기 조건. 순차 학기번호(1,2,3…) 또는 학년-학기 표기(예: 2-1 = 2학년 1학기, 순차 3학기와 동일). 쉼표(,)로 OR 연결. 비우면 전체 학기 대상.">
-      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMin" value="${esc(r.creditMin || '')}" placeholder="${courseRulesKey === 'voc-tech' ? '최소시간' : '최소'}">
-      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMax" value="${esc(r.creditMax || '')}" placeholder="${courseRulesKey === 'voc-tech' ? '최대시간' : '최대'}">
+      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMin" value="${esc(r.creditMin || '')}" placeholder="${isVocTimeBased(courseRulesKey) ? '최소시간' : '최소'}">
+      <input type="number" min="0" step="1" data-i="${i}" data-k="creditMax" value="${esc(r.creditMax || '')}" placeholder="${isVocTimeBased(courseRulesKey) ? '최대시간' : '최대'}">
       <select data-i="${i}" data-k="presence">
         <option value="Y" ${presence === 'Y' ? 'selected' : ''}>편성(Y)</option>
         <option value="N" ${presence === 'N' ? 'selected' : ''}>미편성(N)</option>
@@ -1420,13 +1425,13 @@ function renderCheck(courseKey) {
             <div class="field" style="flex:1;margin:0">
               <label>분석할 파일 내 위치</label>
               <div class="input-wrap">
-                <input type="text" id="pdfLoc" value="${courseKey === 'voc-tech' ? '마.교과목구성' : '8.교육훈련과정로드맵'}" placeholder="예: 8.교육훈련과정로드맵">
+                <input type="text" id="pdfLoc" value="${isVocTimeBased(courseKey) ? '마.교과목구성' : '8.교육훈련과정로드맵'}" placeholder="예: 8.교육훈련과정로드맵">
               </div>
             </div>
             <div class="field" style="flex:0 0 220px;margin:0">
               <label>산업AI교과 분석 페이지 <span style="font-weight:400;color:var(--c-text-soft)">(선택)</span></label>
               <div class="input-wrap">
-                <input type="text" id="pdfAiPages" value="${courseKey === 'voc-tech' ? '2~3' : '3'}" placeholder="예: 12 또는 12-14, 비우면 전체">
+                <input type="text" id="pdfAiPages" value="${isVocTimeBased(courseKey) ? '2~3' : '3'}" placeholder="예: 12 또는 12-14, 비우면 전체">
               </div>
             </div>
             <button class="btn btn-primary" id="analyzeBtn" onclick="runRoadmapAnalyze('${courseKey}')" disabled>${ICON.check} 교과과정 읽어오기</button>
@@ -1481,6 +1486,8 @@ function emptyRow() { return { name: '', gwan: '전공', semester: '', category:
 /* ---------- 교육운영계획서(PDF) 로드맵 분석 ---------------------------- */
 let selectedPdf = null;
 let lastDocInfo = {};   // 마지막 분석한 교육운영계획서 정보(저장 파일명·헤더용)
+const VOC_TIME_KEYS = ['voc-tech', 'voc-hitech']; // 시간(hours) 기준 세부기준 체계를 쓰는 직업교육과정(전문기술/하이테크)
+function isVocTimeBased(courseKey) { return VOC_TIME_KEYS.includes(courseKey); }
 let lastNarrative = {}; // 마지막 분석 시 추출된 서술형 본문·표 기반 산업AI교과 목록
 let lastVocSummary = null; // 마지막 전문기술과정 PDF 분석 시 산출된 소계/총계(res.summary) — 시간기준 검수에 그대로 사용
 let lastCheck = null;   // 마지막 검수 결과(저장용)
@@ -1520,7 +1527,7 @@ async function runRoadmapAnalyze(courseKey) {
   msg.innerHTML = `<div class="notice info"><span class="n-ico">${ICON.info}</span><div><b>${esc(selectedPdf.name)}</b> 분석 중입니다… (수십 페이지 PDF는 잠시 걸릴 수 있습니다)</div></div>`;
   if (btn) btn.disabled = true;
   try {
-    if (courseKey === 'voc-tech') {
+    if (isVocTimeBased(courseKey)) {
       const res = await analyzeVocTech(selectedPdf, loc, aiPages);
       msg.innerHTML = '';
       lastDocInfo = res.info || {};
@@ -1873,10 +1880,19 @@ function runVocTechCheck(courseKey) {
       overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
   if (cl.c_split) add(splitCourses.length === 0, '1개 교과 2개 학기 분할 편성 금지', splitCourses.length + '개 과목 위반', '분할 편성 금지',
       splitCourses.length ? `분할 편성된 과목: ${splitCourses.map(c => c.name).join(', ')}` : '');
-  if (cl.c_liberal) add(liberalHours >= std.liberalHours && hasJikupSahoe && hasGeongang,
-      '교양교과 편성시간·필수교과', `${liberalHours}h / 직업과사회 ${hasJikupSahoe ? 'O' : 'X'} / 건강과능력개발 ${hasGeongang ? 'O' : 'X'}`,
-      `≥ ${std.liberalHours}h (직업과사회+건강과능력개발 필수 포함)`,
-      (!hasJikupSahoe || !hasGeongang) ? '필수 교양교과 미편성' : (liberalHours < std.liberalHours ? '교양교과 총 편성시간 부족' : ''));
+  if (cl.c_liberal) {
+    if (std.liberalAllowed === false) {
+      // 하이테크과정 등: 원칙적으로 교양교과 편성 불가(과정평가형자격 운영학과는 세부기준에서 liberalAllowed를 true로 바꿔 예외 적용)
+      const ok = liberalHours === 0;
+      add(ok, '교양교과 편성 여부', ok ? '미편성(정상)' : `${liberalHours}h 편성됨`, '편성 불가(과정평가형자격 예외)',
+          ok ? '' : '원칙적으로 교양교과는 편성할 수 없습니다(과정평가형자격 운영학과만 예외).');
+    } else {
+      add(liberalHours >= std.liberalHours && hasJikupSahoe && hasGeongang,
+          '교양교과 편성시간·필수교과', `${liberalHours}h / 직업과사회 ${hasJikupSahoe ? 'O' : 'X'} / 건강과능력개발 ${hasGeongang ? 'O' : 'X'}`,
+          `≥ ${std.liberalHours}h (직업과사회+건강과능력개발 필수 포함)`,
+          (!hasJikupSahoe || !hasGeongang) ? '필수 교양교과 미편성' : (liberalHours < std.liberalHours ? '교양교과 총 편성시간 부족' : ''));
+    }
+  }
   if (cl.c_seriesCommon) add(seriesCommonRatio >= std.seriesCommonRatioMin && seriesCommonRatio <= std.seriesCommonRatioMax,
       '계열공통교과 비율', seriesCommonRatio + '%', `${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
       `계열공통 ${seriesCommonHours}h / 총 ${totalHours}h`);
@@ -1955,7 +1971,7 @@ function renderCheckResult(courseKey, checks) {
 /* ---------- 검수 엔진 -------------------------------------------------- */
 function runCheck(courseKey) {
   syncRowsFromDom();
-  if (courseKey === 'voc-tech') { runVocTechCheck(courseKey); return; }
+  if (isVocTimeBased(courseKey)) { runVocTechCheck(courseKey); return; }
   const std = Store.get(courseKey);
   const rows = curriculumRows
     .map(r => ({
@@ -2058,7 +2074,7 @@ function runCheck(courseKey) {
     const gubun = (r.gubun || '').trim();
     let pool = rows;
     if (gubun) {
-      if (courseKey === 'voc-tech') {
+      if (isVocTimeBased(courseKey)) {
         // 직업교육과정: 교양교과/기초기술교과/계열공통교과/특화전공교과 — 단일 구분값을 gwan에 직접 매칭
         pool = rows.filter(c => (c.gwan || '').trim() === gubun);
       } else if (GUBUN_MAP[gubun]) {
@@ -2125,7 +2141,7 @@ function runCheck(courseKey) {
   });
 
   // 교양필수교과 검수 — 교양교과 설정(LiberalArtsStore)에 저장된 역량군별 필수교과 목록 기준으로 대조 (검수기준은 LiberalCheckRuleStore에서 사용자가 변경 가능)
-  if (courseKey !== 'voc-tech' && LiberalArtsStore.isSet(courseKey)) {
+  if (!isVocTimeBased(courseKey) && LiberalArtsStore.isSet(courseKey)) {
     const la = LiberalArtsStore.get(courseKey);
     const rule = LiberalCheckRuleStore.get(courseKey);
     const norm = (s) => (s || '').replace(/\s+/g, '');
@@ -2612,7 +2628,7 @@ function buildReportHtml() {
     <table class="rep-info">
       <tr><th>년도</th><td>${esc(info.년도 || '-')}</td><th>캠퍼스</th><td>${esc(info.캠퍼스 || '-')}</td></tr>
       <tr><th>과정</th><td>${esc(info.과정 || '-')}</td><th>계열</th><td>${esc(info.계열 || '-')}</td></tr>
-      <tr><th>학과</th><td>${esc(info.학과 || '-')}</td><th>${c.courseKey === 'voc-tech' ? '직종' : '전공'}</th><td>${esc(info.전공 || '-')}</td></tr>
+      <tr><th>학과</th><td>${esc(info.학과 || '-')}</td><th>${isVocTimeBased(c.courseKey) ? '직종' : '전공'}</th><td>${esc(info.전공 || '-')}</td></tr>
       <tr><th>검수일시</th><td colspan="3">${nowStamp()}</td></tr>
     </table>
     <div class="rep-verdict ${c.allPass ? 'pass' : 'fail'}">종합 판정 : ${c.allPass ? '적합' : '부적합'} (${c.passCount}/${c.checks.length} 항목 충족)</div>
