@@ -1193,13 +1193,15 @@ function slResetRule() {
 
 function renderField(f, value) {
   if (f.type === 'bool') {
+    const onLabel = f.trueLabel || '포함함';
+    const offLabel = f.falseLabel || '포함 안 함';
     return `
       <div class="field">
         <label>${esc(f.label)}</label>
         <label class="switch">
           <input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}>
           <span class="track"></span>
-          <span class="switch-label">${value ? '포함함' : '포함 안 함'}</span>
+          <span class="switch-label">${value ? esc(onLabel) : esc(offLabel)}</span>
         </label>
       </div>`;
   }
