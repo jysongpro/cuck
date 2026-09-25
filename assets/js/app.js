@@ -535,6 +535,9 @@ function renderHome() {
           개발버전 <b>${esc(APP_META.version)}</b><br>
           개발 · <b>${esc(APP_META.developer)}</b>
         </div>
+        <div class="copyright" style="margin-top:10px;font-size:11px;color:rgba(255,255,255,.55)">
+          © ${new Date().getFullYear()} 학교법인 한국폴리텍. All rights reserved.
+        </div>
       </div>
     </section>`;
 }
@@ -1334,7 +1337,7 @@ let curriculumRows = [];
 
 function setVocTrack(courseKey, track) {
   VocTrackStore.set(courseKey, track);
-  navigate(location.hash.replace(/^#\//, ''));
+  router();  // location.hash가 바뀌지 않으므로 hashchange가 발생하지 않아 직접 재렌더링 호출
 }
 
 function renderCheck(courseKey) {
@@ -1998,7 +2001,7 @@ function saveCheckResultToHistory(courseKey) {
 /* =========================================================================
  * 검수결과 내역(전체 학과 누적 관리 화면)
  * ========================================================================= */
-let historyFilter = { cat: '', univ: '', campus: '' };
+let historyFilter = { cat: 'degree', univ: '', campus: '' };
 /* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
 function historyTrackLabel(r) {
   const spec = COURSE_SPECS[r.courseKey];
@@ -2018,7 +2021,12 @@ function setHistoryFilter(field, value) {
   renderHistory();
 }
 function resetHistoryFilter() {
-  historyFilter = { cat: '', univ: '', campus: '' };
+  historyFilter.univ = '';
+  historyFilter.campus = '';
+  renderHistory();
+}
+function setHistoryTab(tabKey) {
+  historyFilter = { cat: tabKey, univ: '', campus: '' };
   renderHistory();
 }
 function renderHistory() {
@@ -2026,16 +2034,18 @@ function renderHistory() {
   const app = $('#app');
   const allList = HistoryStore.all();
 
-  /* ---- 필터 옵션 구성 ---- */
-  const catOptions = Object.keys(PROGRAM_TREE).map(k => ({ key: k, title: PROGRAM_TREE[k].title }));
-  const univScope = historyFilter.cat ? allList.filter(r => historyCatKey(r) === historyFilter.cat) : allList;
-  const univOptions = [...new Set(univScope.map(r => r.info.대학).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
-  const campusScope = historyFilter.univ ? univScope.filter(r => r.info.대학 === historyFilter.univ) : univScope;
+  /* ---- 탭(과정 구분) 옵션 — 학위과정/직업교육과정을 완전히 분리된 탭으로 구성 ---- */
+  const tabOptions = Object.keys(PROGRAM_TREE).map(k => ({ key: k, title: PROGRAM_TREE[k].title }));
+  if (!historyFilter.cat) historyFilter.cat = tabOptions[0].key;
+  const tabScope = allList.filter(r => historyCatKey(r) === historyFilter.cat);
+
+  /* ---- 필터 옵션 구성(현재 탭 범위 내에서만) ---- */
+  const univOptions = [...new Set(tabScope.map(r => r.info.대학).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const campusScope = historyFilter.univ ? tabScope.filter(r => r.info.대학 === historyFilter.univ) : tabScope;
   const campusOptions = [...new Set(campusScope.map(r => r.info.캠퍼스).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
 
   /* ---- 필터 적용 ---- */
-  const list = allList.filter(r =>
-    (!historyFilter.cat || historyCatKey(r) === historyFilter.cat) &&
+  const list = tabScope.filter(r =>
     (!historyFilter.univ || r.info.대학 === historyFilter.univ) &&
     (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus)
   );
@@ -2065,22 +2075,22 @@ function renderHistory() {
     <section class="page">
       <div class="panel-head">
         <h2>검수내역</h2>
-        <span class="desc">저장된 학과·전공별 검수결과를 모아 확인하고 관리합니다. (전체 ${allList.length}건 중 ${list.length}건 표시)</span>
+        <span class="desc">저장된 학과·전공별 검수결과를 모아 확인하고 관리합니다. (${esc(PROGRAM_TREE[historyFilter.cat].title)} — 전체 ${tabScope.length}건 중 ${list.length}건 표시)</span>
       </div>
+
+      <div class="hist-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--c-border,#e5e7eb);">
+        ${tabOptions.map(t => `
+          <button class="btn ${historyFilter.cat === t.key ? 'btn-primary' : 'btn-ghost'}"
+            style="border-radius:10px 10px 0 0;border-bottom:none;font-weight:700;"
+            onclick="setHistoryTab('${t.key}')">${esc(t.title)}</button>
+        `).join('')}
+      </div>
+
       ${allList.length === 0 ? `
         <div class="notice info"><span class="n-ico">${ICON.info}</span>
           <div>아직 저장된 검수결과가 없습니다. 커리큘럼 체크 실행 후 <b>검수결과 저장</b> 버튼으로 내역을 쌓아보세요.</div></div>
       ` : `
         <div class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;padding:14px 16px;">
-          <div class="field" style="margin:0;min-width:160px">
-            <label>과정 구분</label>
-            <div class="input-wrap">
-              <select onchange="setHistoryFilter('cat', this.value)">
-                <option value="">전체</option>
-                ${catOptions.map(c => `<option value="${c.key}" ${historyFilter.cat === c.key ? 'selected' : ''}>${esc(c.title)}</option>`).join('')}
-              </select>
-            </div>
-          </div>
           <div class="field" style="margin:0;min-width:180px">
             <label>대학</label>
             <div class="input-wrap">
@@ -2099,7 +2109,7 @@ function renderHistory() {
               </select>
             </div>
           </div>
-          ${(historyFilter.cat || historyFilter.univ || historyFilter.campus) ? `<button class="btn btn-ghost btn-sm" onclick="resetHistoryFilter()">필터 초기화</button>` : ''}
+          ${(historyFilter.univ || historyFilter.campus) ? `<button class="btn btn-ghost btn-sm" onclick="resetHistoryFilter()">필터 초기화</button>` : ''}
         </div>
         ${isAdmin() ? `
         <div class="toolbar" style="margin-bottom:10px">
@@ -2159,8 +2169,9 @@ function remapAllHistoryUniv() {
 /* 검수내역 전체 목록을 엑셀(.xls, HTML 표 기반 — 별도 라이브러리 없이 오프라인에서도 엑셀로 정상 열림)로 내보낸다 */
 function exportHistoryToExcel() {
   if (!isAdmin()) { toast('엑셀 내려받기는 관리자만 이용할 수 있습니다.'); return; }
-  const list = HistoryStore.all();
-  if (!list.length) { toast('저장된 검수내역이 없습니다.'); return; }
+  const tabKey = historyFilter.cat || Object.keys(PROGRAM_TREE)[0];
+  const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
+  if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
@@ -2187,12 +2198,12 @@ function exportHistoryToExcel() {
   const a = document.createElement('a');
   const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
   a.href = url;
-  a.download = `CurriculumChecker-검수내역-${ts}.xls`;
+  a.download = `CurriculumChecker-검수내역-${PROGRAM_TREE[tabKey].title}-${ts}.xls`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  toast('검수내역 전체 목록을 엑셀 파일로 저장했습니다.');
+  toast(`${PROGRAM_TREE[tabKey].title} 검수내역 목록을 엑셀 파일로 저장했습니다.`);
 }
 
 function toggleAllHistory(btn) {

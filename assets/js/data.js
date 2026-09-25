@@ -154,7 +154,7 @@ const COURSE_SPECS = {
     checkTitle: '전문기술과정 교과과정 검수',
     durationTracks: {
       '1200': {
-        trackLabel: '1,200시간(2학기)',
+        trackLabel: '1,200시간',
         standardGroups: [
           {
             title: '운영 총시간 기준',
@@ -203,7 +203,7 @@ const COURSE_SPECS = {
           },
         ],
         checklist: [
-          { key: 'c_totalHours', label: '총 운영시간 1,200시간(2학기) 충족', ref: '1,200h', def: true },
+          { key: 'c_totalHours', label: '총 운영시간 1,200시간 충족', ref: '1,200h', def: true },
           { key: 'c_ratio',      label: '이론:실습 = 20:80(±10%p) 충족',                    ref: '실습 70~90%',      def: true },
           { key: 'c_major',      label: '전공교과 85% 이상 편성',                          ref: '≥ 85%',           def: true },
           { key: 'c_courseMax',  label: '과목당 120시간 이내 편성(NCS 제외)',              ref: '≤ 120h',          def: true },
@@ -218,7 +218,7 @@ const COURSE_SPECS = {
         ],
       },
       '600': {
-        trackLabel: '600시간(6개월)',
+        trackLabel: '600시간',
         standardGroups: [
           {
             title: '운영 총시간 기준',
@@ -267,7 +267,7 @@ const COURSE_SPECS = {
           },
         ],
         checklist: [
-          { key: 'c_totalHours', label: '총 운영시간 600시간(6개월) 충족', ref: '600h', def: true },
+          { key: 'c_totalHours', label: '총 운영시간 600시간 충족', ref: '600h', def: true },
           { key: 'c_ratio',      label: '이론:실습 = 20:80(±10%p) 충족',                    ref: '실습 70~90%',      def: true },
           { key: 'c_major',      label: '전공교과 85% 이상 편성',                          ref: '≥ 85%',           def: true },
           { key: 'c_courseMax',  label: '과목당 120시간 이내 편성(NCS 제외)',              ref: '≤ 120h',          def: true },
@@ -420,7 +420,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정 개편 세부기준 검수 프로그램',
-  version: '1.0',
+  version: '1.6.5',
   developer: '학교법인 한국폴리텍  AI혁신부',
 };
 
