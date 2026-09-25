@@ -2280,7 +2280,7 @@ function saveCheckResultToHistory(courseKey) {
 /* =========================================================================
  * 검수결과 내역(전체 학과 누적 관리 화면)
  * ========================================================================= */
-let historyFilter = { cat: 'degree', univ: '', campus: '' };
+let historyFilter = { cat: 'degree', univ: '', campus: '', series: '' };
 /* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
 function historyTrackLabel(r) {
   const spec = COURSE_SPECS[r.courseKey];
@@ -2295,17 +2295,19 @@ function historyCatKey(r) {
 }
 function setHistoryFilter(field, value) {
   historyFilter[field] = value;
-  if (field === 'cat') { historyFilter.univ = ''; historyFilter.campus = ''; }
-  if (field === 'univ') { historyFilter.campus = ''; }
+  if (field === 'cat') { historyFilter.univ = ''; historyFilter.campus = ''; historyFilter.series = ''; }
+  if (field === 'univ') { historyFilter.campus = ''; historyFilter.series = ''; }
+  if (field === 'campus') { historyFilter.series = ''; }
   renderHistory();
 }
 function resetHistoryFilter() {
   historyFilter.univ = '';
   historyFilter.campus = '';
+  historyFilter.series = '';
   renderHistory();
 }
 function setHistoryTab(tabKey) {
-  historyFilter = { cat: tabKey, univ: '', campus: '' };
+  historyFilter = { cat: tabKey, univ: '', campus: '', series: '' };
   renderHistory();
 }
 function renderHistory() {
@@ -2322,11 +2324,14 @@ function renderHistory() {
   const univOptions = [...new Set(tabScope.map(r => r.info.대학).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
   const campusScope = historyFilter.univ ? tabScope.filter(r => r.info.대학 === historyFilter.univ) : tabScope;
   const campusOptions = [...new Set(campusScope.map(r => r.info.캠퍼스).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const seriesScope = historyFilter.campus ? campusScope.filter(r => r.info.캠퍼스 === historyFilter.campus) : campusScope;
+  const seriesOptions = [...new Set(seriesScope.map(r => r.info.계열).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
 
   /* ---- 필터 적용 ---- */
   const list = tabScope.filter(r =>
     (!historyFilter.univ || r.info.대학 === historyFilter.univ) &&
-    (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus)
+    (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus) &&
+    (!historyFilter.series || r.info.계열 === historyFilter.series)
   );
 
   const rows = list.map((r, i) => `
@@ -2337,6 +2342,7 @@ function renderHistory() {
       ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
       <td class="l">${esc(r.info.대학 || '-')}</td>
       <td>${esc(r.info.캠퍼스 || '-')}</td>
+      <td>${esc(r.info.계열 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
       <td>${esc(r.info.전공 || '-')}</td>
       <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} ${isAdmin() ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
@@ -2388,6 +2394,15 @@ function renderHistory() {
               </select>
             </div>
           </div>
+          <div class="field" style="margin:0;min-width:180px">
+            <label>계열</label>
+            <div class="input-wrap">
+              <select onchange="setHistoryFilter('series', this.value)">
+                <option value="">전체</option>
+                ${seriesOptions.map(s => `<option value="${esc(s)}" ${historyFilter.series === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
           ${(historyFilter.univ || historyFilter.campus) ? `<button class="btn btn-ghost btn-sm" onclick="resetHistoryFilter()">필터 초기화</button>` : ''}
         </div>
         ${isAdmin() ? `
@@ -2402,8 +2417,8 @@ function renderHistory() {
         <div class="panel" style="overflow-x:auto">
           <table class="vtable">
             <thead><tr>
-              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th>${historyFilter.cat === 'vocational' ? '<th style="width:100px">구분(시간)</th>' : ''}<th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>
-              <th style="width:80px">과정평가형</th><th>저장일시</th><th style="width:70px">판정</th><th style="width:70px">충족률</th><th style="width:150px">비고</th><th style="width:130px">관리</th>
+              ${isAdmin() ? '<th></th>' : ''}<th>순번</th><th>과정</th>${historyFilter.cat === 'vocational' ? '<th>구분(시간)</th>' : ''}<th>대학</th><th>캠퍼스</th><th>계열</th><th>학과</th><th>${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>
+              <th>과정평가형</th><th>저장일시</th><th>판정</th><th>충족률</th><th>비고</th><th>관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>

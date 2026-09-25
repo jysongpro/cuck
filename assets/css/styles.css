@@ -479,7 +479,13 @@ a { color: inherit; text-decoration: none; }
 .stat .s-val small { font-size: 13px; font-weight: 600; color: var(--c-text-soft); }
 
 /* 검수 결과 표 */
-.vtable { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.vtable { width: 100%; border-collapse: collapse; font-size: 13.5px; table-layout: auto; }
+.vtable th, .vtable td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.vtable td.l, .vtable td.vt-item { white-space: normal; }
+@media (max-width: 720px) {
+  .vtable { font-size: 12px; }
+  .vtable th, .vtable td { padding: 6px 8px; }
+}
 .vtable thead th {
   background: var(--c-navy-800); color: #fff; font-weight: 700; font-size: 13px;
   padding: 11px 12px; text-align: center; border: 1px solid var(--c-navy-700);
