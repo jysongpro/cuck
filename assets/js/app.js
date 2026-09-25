@@ -1618,13 +1618,6 @@ function renderVocTechResult(courseKey, res) {
         </tbody>
       </table>
     </div>
-    ${res.narrative && res.narrative.industrialAi ? `
-    <div class="panel-head" style="border:0;padding:18px 0 8px"><h2>산업AI교과 서술 확인 결과 (나.AI교과 섹션)</h2></div>
-    <div class="panel" style="padding:14px 16px;font-size:13.5px;line-height:1.6">${esc(res.narrative.industrialAi)}</div>
-    ` : (res.narrative ? `
-    <div class="panel-head" style="border:0;padding:18px 0 8px"><h2>산업AI교과 서술 확인 결과</h2></div>
-    <div class="notice warn" style="margin:0 0 4px"><span class="n-ico">${ICON.warn || ''}</span><div>문서에서 'AI교과' 섹션 내 '산업AI' 서술 내용을 찾지 못했습니다. 위 '산업AI교과 분석 페이지' 입력칸에 해당 내용이 있는 페이지 번호를 지정해 다시 읽어오세요.</div></div>
-    ` : '')}
     <div class="toolbar" style="margin:18px 0 4px">
       <button class="btn btn-primary" onclick="runCheck('${courseKey}')">${ICON.check} 세부기준 체크 (기준 적합성 검수)</button>
       <span style="font-size:12.5px;color:var(--c-text-soft)">분석된 커리큘럼을 저장된 세부기준과 대조합니다.</span>
@@ -1698,13 +1691,6 @@ function renderRoadmapResult(courseKey, res) {
         <tbody>${body}</tbody>
       </table>
     </div>
-    ${res.narrative && res.narrative.industrialAi ? `
-    <div class="panel-head" style="border:0;padding:18px 0 8px"><h2>산업AI교과 서술 확인 결과 (나.AI교과 섹션)</h2></div>
-    <div class="panel" style="padding:14px 16px;font-size:13.5px;line-height:1.6">${esc(res.narrative.industrialAi)}</div>
-    ` : (res.narrative ? `
-    <div class="panel-head" style="border:0;padding:18px 0 8px"><h2>산업AI교과 서술 확인 결과</h2></div>
-    <div class="notice warn" style="margin:0 0 4px"><span class="n-ico">${ICON.warn || ''}</span><div>문서에서 'AI교과' 섹션 내 '산업AI' 서술 내용을 찾지 못했습니다. 위 '산업AI교과 분석 페이지' 입력칸에 해당 내용이 있는 페이지 번호를 지정해 다시 읽어오세요.</div></div>
-    ` : '')}
     <div class="toolbar" style="margin:18px 0 4px">
       <button class="btn btn-primary" onclick="runCheck('${courseKey}')">${ICON.check} 세부기준 체크 (기준 적합성 검수)</button>
       <span style="font-size:12.5px;color:var(--c-text-soft)">분석된 커리큘럼을 저장된 세부기준과 대조합니다.</span>
