@@ -833,7 +833,8 @@ function buildCriteriaList(courseKey) {
     if (!(r.keyword || r.label)) return;
     const gubun = (r.gubun || '').trim();
     const lo = Number(r.creditMin) || 0, hi = Number(r.creditMax) || 0;
-    const creditReq = lo > 0 && hi > 0 ? ` · ${lo}~${hi}학점` : lo > 0 ? ` · ${lo}학점 이상` : hi > 0 ? ` · ${hi}학점 이하` : '';
+    const unit = isVocTimeBased(courseKey) ? '시간' : '학점';
+    const creditReq = lo > 0 && hi > 0 ? ` · ${lo}~${hi}${unit}` : lo > 0 ? ` · ${lo}${unit} 이상` : hi > 0 ? ` · ${hi}${unit} 이하` : '';
     const presenceReq = (r.presence || 'Y') === 'Y' ? '편성(Y)' : '미편성(N)';
     const semTag = r.semester && r.semester.trim() ? `[${semSpecText(r.semester)}] ` : '';
     const condTag = r.condOptional ? '[편성시만 검수] ' : '';
@@ -2001,7 +2002,69 @@ function runVocTechCheck(courseKey) {
         !capstoneCourse ? '「종합실습」 교과를 찾지 못했습니다.' : (!inSem2 ? '2학기 편성이 확인되지 않았습니다.' : (!hoursOk ? '편성시간이 기준에 미달합니다.' : '')));
   }
 
+  // v1.9.7 — 교과목 편성기준(사용자 정의, 커리큘럼 체크리스트)을 하이테크/직업교육과정 적합성 세부검수에도 적용
+  vocCourseRuleChecks(courseKey, rows, courses).forEach(c => add(c.ok, c.title, c.val, c.req, c.detail));
   renderCheckResult(courseKey, checks);
+}
+
+/* v1.9.7 — 직업교육과정(하이테크 등) 교과목 편성기준 검수
+ *  - 구분: 편성기준 선택값 "기초기술교과/계열공통교과/특화전공교과/교양교과" ↔ PDF 인식값 "기초기술/계열공통/특화전공/교양교과"를 정규화해 비교
+ *  - 학기: 교과목이 편성된 학기(1·2학기, 분할 편성 포함) 중 하나라도 해당하면 인정
+ *  - 시간: 최소/최대는 교과목 편성시간(계) 합계(시간 단위)로 비교
+ *  - 편성시만 검수, 편성여부(Y/N), 그룹(AND/OR) 결합은 학위과정과 동일 */
+function vocCourseRuleChecks(courseKey, rows, courses) {
+  const out = [];
+  const norm = (s) => String(s || '').replace(/\s+/g, '');
+  const gnorm = (s) => norm(s).replace(/교과$/, '');
+  const results = [];
+  CourseRuleStore.get(courseKey).forEach(r => {
+    if (!r.on) return;
+    const kw = norm(r.keyword || r.label);
+    if (!kw) return;
+    if (r.condOptional && !courses.some(c => norm(c.name).includes(kw))) return;
+    const gubun = (r.gubun || '').trim();
+    let pool = courses;
+    if (gubun) pool = pool.filter(c => gnorm(c.gwan) === gnorm(gubun));
+    const semSet = parseSemSpec(r.semester);
+    if (semSet) pool = pool.filter(c => [...c.sems].some(s => semSet.has(Number(s))));
+    const matched = pool.filter(c => norm(c.name).includes(kw));
+    const present = matched.length > 0;
+    const hours = matched.reduce((s, c) => s + (c.semTotal || 0), 0);
+    const wantPresent = (r.presence || 'Y') === 'Y';
+    const lo = Number(r.creditMin) || 0, hi = Number(r.creditMax) || 0;
+    const active = lo > 0 || hi > 0;
+    const reqText = lo > 0 && hi > 0 ? `${lo}~${hi}시간` : lo > 0 ? `${lo}시간 이상` : `${hi}시간 이하`;
+    const title = r.label || r.keyword;
+    const tag = `${r.condOptional ? '[편성시만 검수] ' : ''}${gubun ? `[${gubun}] ` : ''}${semSet ? `[${semSpecText(r.semester)}] ` : ''}`;
+    const names = matched.map(c => c.name).join(', ');
+    let ok, val, req, detail;
+    if (wantPresent) {
+      const hOk = !active || (present && (lo === 0 || hours >= lo) && (hi === 0 || hours <= hi));
+      ok = present && hOk;
+      val = present ? `편성됨 (${names}${active ? ` · ${hours}h` : ''})` : '미편성';
+      req = `${tag}편성(Y)${active ? ` · ${reqText}` : ''}`;
+      detail = ok ? '' : (!present ? `${tag}'${r.keyword || title}' 교과가 편성되지 않았습니다.` : `편성시간 미충족 (실제 ${hours}h / 기준 ${reqText})`);
+    } else {
+      ok = !present;
+      val = present ? `편성됨 (${names})` : '미편성';
+      req = `${tag}미편성(N)`;
+      detail = ok ? '' : `${tag}'${r.keyword || title}' 교과가 편성되어 있습니다(미편성 기준).`;
+    }
+    results.push({ ok, title, val, req, detail, group: (r.group || '').trim(), groupOp: r.groupOp || 'AND' });
+  });
+  const groups = {};
+  results.forEach(x => {
+    if (!x.group) { out.push(x); return; }
+    (groups[x.group] = groups[x.group] || { op: x.groupOp, items: [] }).items.push(x);
+  });
+  Object.keys(groups).forEach(g => {
+    const { op, items } = groups[g];
+    const ok = op === 'OR' ? items.some(i => i.ok) : items.every(i => i.ok);
+    out.push({ ok, title: `[그룹] ${g}`, val: items.map(i => `${i.title}: ${i.val}`).join(' / '),
+      req: items.map(i => i.req).join(op === 'OR' ? ' 또는 ' : ' 그리고 '),
+      detail: ok ? '' : `[${op === 'OR' ? '모두 미충족' : '일부 미충족'}] ` + items.filter(i => !i.ok).map(i => i.detail || `${i.title} 미충족`).join(' / ') });
+  });
+  return out;
 }
 
 function renderCheckResult(courseKey, checks) {
