@@ -484,10 +484,17 @@ function detectVocTimeBounds(items) {
   }
 
   const ncsItem = findInRows('NCS') || findInRows('적용시간');
+  // 편성시간 하위 컬럼은 문서마다 "1학기/2학기/3학기"로 인쇄되기도 하고,
+  // 10개월 과정 등 일부 문서는 같은 컬럼을 "기초/심화/특화"로 인쇄하기도 한다(값의 의미는 동일: 순서상 1·2·3번째 학기).
+  // 두 표기 중 어느 것이 있는지 헤더 행에서 찾아 그에 맞는 라벨로 좌표를 추출한다.
   const semRow = rows.find(r => {
     let buf = '';
     r.items.forEach(it => { buf += despace(it.str); });
     return buf.includes('1학기') && buf.includes('2학기');
+  }) || rows.find(r => {
+    let buf = '';
+    r.items.forEach(it => { buf += despace(it.str); });
+    return buf.includes('기초') && buf.includes('심화');
   });
   let semTotalItem = null, sem1Item = null, sem2Item = null, sem3Item = null;
   if (semRow) {
@@ -499,10 +506,17 @@ function detectVocTimeBounds(items) {
       buf += s;
     });
     const at = (label) => { const idx = buf.indexOf(label); return idx === -1 ? null : { x: charX[idx], top: semRow.top }; };
+    const useAltLabels = !(buf.includes('1학기') && buf.includes('2학기'));
     semTotalItem = at('계');
-    sem1Item = at('1학기');
-    sem2Item = at('2학기');
-    sem3Item = at('3학기');
+    if (useAltLabels) {
+      sem1Item = at('기초');
+      sem2Item = at('심화');
+      sem3Item = at('특화');
+    } else {
+      sem1Item = at('1학기');
+      sem2Item = at('2학기');
+      sem3Item = at('3학기');
+    }
   }
   const remarkItem = findInRows('비고');
 
