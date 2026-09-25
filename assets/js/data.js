@@ -285,16 +285,19 @@ const COURSE_SPECS = {
     checkTitle: '하이테크과정 교과과정 검수',
     durationTracks: {
       '600': {
-        trackLabel: '600시간',
+        trackLabel: '융합모듈제(학기당 600시간)',
+        fusionModule: true,   // 학기별(600h×2) 검수 로직을 별도로 적용하는 하이테크 전용 트랙
         standardGroups: [
           {
-            title: '운영 총시간 기준',
+            title: '운영 총시간 기준(융합모듈제)',
             fields: [
-              { key: 'totalHours',     label: '총 운영시간', unit: '시간', def: 600, note: '융합모듈제(단기 집중형) 과정 기준' },
-              { key: 'semesters',      label: '운영 학기 수', unit: '학기', def: 2 },
-              { key: 'theoryRatio',    label: '이론 비율(기준)', unit: '%', def: 20, note: '이론:실습 = 20:80' },
-              { key: 'practiceRatio', label: '실습 비율(기준)', unit: '%', def: 80 },
-              { key: 'ratioTolerance', label: '비율 허용오차(±)', unit: '%p', def: 10 },
+              { key: 'totalHours',      label: '전체 운영시간', unit: '시간', def: 1200, note: '1학기+2학기 합계(융합모듈제는 학기별로 나누어 운영)' },
+              { key: 'semesters',       label: '운영 학기 수', unit: '학기', def: 2 },
+              { key: 'semHoursTarget',  label: '학기별 운영시간(기준)', unit: '시간', def: 600, note: '1학기·2학기 각각 600시간 기준' },
+              { key: 'semHoursTolerance', label: '학기별 운영시간 허용오차(±)', unit: '%', def: 10, note: '학기별 600시간 기준 ±10% 이내' },
+              { key: 'theoryRatio',     label: '이론 비율(기준)', unit: '%', def: 20, note: '학기별 이론:실습 = 20:80' },
+              { key: 'practiceRatio',   label: '실습 비율(기준)', unit: '%', def: 80 },
+              { key: 'ratioTolerance',  label: '이론:실습 비율 허용오차(±)', unit: '%p', def: 10, note: '학기별로 각각 검수' },
             ],
           },
           {
@@ -306,20 +309,20 @@ const COURSE_SPECS = {
             ],
           },
           {
-            title: '교양·계열공통 교과',
+            title: '교양·계열공통 교과(학기별)',
             fields: [
               { key: 'liberalAllowed',     label: '교양교과 편성 허용 여부', unit: '', def: false, type: 'bool', trueLabel: '허용', falseLabel: '편성 불가', note: '하이테크과정은 교양교과를 편성하지 않음(과정평가형자격 운영학과는 예외적으로 허용)' },
               { key: 'liberalHours',       label: '교양교과편성시간(예외 허용 시 기준)', unit: '시간', def: 0, note: '과정평가형 예외 학과에 한해 세부기준 별도 설정' },
-              { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소)', unit: '%', def: 10 },
-              { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대)', unit: '%', def: 20 },
+              { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소, 학기별)', unit: '%', def: 10, note: '1학기·2학기 각각의 학기별 전체 교육시간 대비 비율' },
+              { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대, 학기별)', unit: '%', def: 20 },
             ],
           },
           {
             title: '프로젝트·종합실습',
             fields: [
-              { key: 'projectRatioMin', label: '프로젝트실습 비율(최소)', unit: '%',    def: 5,  note: '2학기 비NCS 필수' },
+              { key: 'projectRatioMin', label: '프로젝트실습 비율(최소)', unit: '%',    def: 5,  note: '전체 교육시간 대비 비율, 1학기 또는 2학기 편성' },
               { key: 'projectRatioMax', label: '프로젝트실습 비율(최대)', unit: '%',    def: 10 },
-              { key: 'capstoneHours',   label: '종합실습편성시간 이상',       unit: '시간', def: 40, note: '2학기 마지막 교과로 필수 편성' },
+              { key: 'capstoneHours',   label: '종합실습편성시간 이상',       unit: '시간', def: 40, note: '2학기 필수 편성' },
             ],
           },
           {
@@ -333,15 +336,15 @@ const COURSE_SPECS = {
           },
         ],
         checklist: [
-          { key: 'c_totalHours', label: '총 운영시간 600시간 충족', ref: '600시간', def: true },
-          { key: 'c_ratio',      label: '이론:실습 = 20:80(±10%p) 충족',                    ref: '실습 70~90%',      def: true },
+          { key: 'c_semHours',   label: '학기별 운영시간 600시간(±10%) 충족',              ref: '학기당 540~660h',  def: true },
+          { key: 'c_semRatio',   label: '학기별 이론:실습 = 20:80(±10%p) 충족',            ref: '학기별 실습 70~90%', def: true },
+          { key: 'c_semSeriesCommon', label: '학기별 계열공통교과 10~20% 편성',            ref: '학기별 10~20%',    def: true },
+          { key: 'c_semProject', label: '프로젝트실습 5~10% 비중, 1·2학기 중 편성',        ref: '전체 5~10%',       def: true },
+          { key: 'c_semCapstone', label: '종합실습 2학기 40시간 필수 편성',                 ref: '40h/2학기',        def: true },
           { key: 'c_major',      label: '전공교과(기초기술+계열공통+특화전공) 85% 이상 편성', ref: '≥ 85%',           def: true },
           { key: 'c_courseMax',  label: '과목당 120시간 이내 편성(NCS 제외)',              ref: '≤ 120h',          def: true },
           { key: 'c_split',      label: '1개 교과 2개 학기 분할 편성 금지',                 ref: '분할 불가',        def: true },
           { key: 'c_liberal',    label: '교양교과 미편성(과정평가형자격 운영학과 예외)',   ref: '편성 불가',       def: true },
-          { key: 'c_seriesCommon', label: '계열공통교과 10~20% 편성',                      ref: '10~20%',          def: true },
-          { key: 'c_project',    label: '프로젝트실습 5~10% 비중, 2학기 비NCS 필수 편성',   ref: '5~10%',           def: true },
-          { key: 'c_capstone',   label: '종합실습 2학기 마지막 40시간 편성',               ref: '40h',             def: true },
           { key: 'c_safety',     label: '산업안전교과 16시간(온라인6h포함) 2학기 편성',    ref: '16h/2학기',       def: true },
           { key: 'c_aiApplied',  label: 'AI활용 교과풀(9개 교과)내 교과 편성',             ref: '≥ 20h',           def: true },
           { key: 'c_industrialAi', label: '계열별 50개 교과풀 또는 학과 자체 편성',         ref: '20~40h',          def: true },
@@ -613,7 +616,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정개편 세부기준 검수 지원 도구',
-  version: '1.8.2',
+  version: '1.8.3',
   developer: '학교법인 한국폴리텍대학 AI혁신부',
 };
 

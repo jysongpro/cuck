@@ -1794,6 +1794,7 @@ function runVocTechCheck(courseKey) {
       semester: String(r.semester || ''),
       ncsHours: (r.ncsHours !== '' && r.ncsHours != null && !isNaN(+r.ncsHours)) ? +r.ncsHours : 0,
       semTotal: (r.semTotal !== '' && r.semTotal != null && !isNaN(+r.semTotal)) ? +r.semTotal : (+r.credit || 0),
+      semHours: (+r.credit || 0),   // 해당 학기(1 또는 2)에 편성된 시간 — 융합모듈제(학기별 검수)에서만 사용
     }))
     .filter(r => r.name);
   if (!rows.length) { toast('검수할 교과목을 1개 이상 입력하세요.'); return; }
@@ -1863,6 +1864,20 @@ function runVocTechCheck(courseKey) {
   const overMaxCourses = courses.filter(c => (c.semTotal - c.ncsHours) > (std.courseHoursMax || Infinity));
   const splitCourses = courses.filter(c => c.sems.size > 1 && !std.splitAllowed);
 
+  // 융합모듈제(하이테크과정 600h 트랙) 전용 — 학기별(1학기/2학기 각 600h) 집계.
+  // rows는 학기별로 나뉜 원본 행이므로(교과목명 병합 전), semHours(그 학기의 실제 편성시간)를 학기별로 그대로 합산한다.
+  const semAgg = { '1': { total: 0, theory: 0, practice: 0, seriesCommon: 0 }, '2': { total: 0, theory: 0, practice: 0, seriesCommon: 0 } };
+  rows.forEach(r => {
+    const sem = r.semester;
+    if (sem !== '1' && sem !== '2') return;
+    const a = semAgg[sem];
+    a.total += r.semHours;
+    if (r.gwan === '교양교과' || r.gwan === '기초기술') a.theory += r.semHours;
+    if (r.gwan === '계열공통' || r.gwan === '특화전공') a.practice += r.semHours;
+    if (r.gwan === '계열공통') a.seriesCommon += r.semHours;
+  });
+  const semRatio = (part, total) => total ? Math.round(part / total * 1000) / 10 : 0;
+
   const checks = [];
   const add = (ok, title, val, req, detail = '') => checks.push({ ok, title, val, req, detail });
 
@@ -1915,6 +1930,59 @@ function runVocTechCheck(courseKey) {
   if (cl.c_industrialAi) add(!!industrialAiCourse, '산업AI교과 편성여부',
       industrialAiCourse ? `편성됨 (${industrialAiCourse.name}, ${industrialAiCourse.semTotal}h)` : '미편성', '계열별 50개 교과풀 또는 학과 자체 편성',
       !industrialAiCourse ? '산업AI교과 설정 목록에도, PDF 2~3페이지 AI교과표 산업AI교과 행에도 해당하는 교과를 찾지 못했습니다.' : '');
+
+  // 융합모듈제(하이테크과정 600h 트랙) 전용 5개 학기별 검수 항목 — 요청하신 우선 적용 조건
+  if (cl.c_semHours) {
+    const tol = std.semHoursTolerance || 10;
+    const target = std.semHoursTarget || 600;
+    const lo = target * (1 - tol / 100), hi = target * (1 + tol / 100);
+    const sem1Ok = semAgg['1'].total >= lo && semAgg['1'].total <= hi;
+    const sem2Ok = semAgg['2'].total >= lo && semAgg['2'].total <= hi;
+    add(sem1Ok && sem2Ok, '학기별 운영시간(600h ±10%)',
+        `1학기 ${semAgg['1'].total}h / 2학기 ${semAgg['2'].total}h`, `학기당 ${Math.round(lo)}~${Math.round(hi)}h`,
+        (sem1Ok && sem2Ok) ? '' : `${!sem1Ok ? '1학기' : ''}${(!sem1Ok && !sem2Ok) ? ', ' : ''}${!sem2Ok ? '2학기' : ''} 편성시간이 기준 범위를 벗어났습니다.`);
+  }
+  if (cl.c_semRatio) {
+    const tol = std.ratioTolerance || 10;
+    const target = std.practiceRatio || 80;
+    const lo = target - tol, hi = target + tol;
+    const sem1Practice = semRatio(semAgg['1'].practice, semAgg['1'].theory + semAgg['1'].practice);
+    const sem2Practice = semRatio(semAgg['2'].practice, semAgg['2'].theory + semAgg['2'].practice);
+    const sem1Ok = sem1Practice >= lo && sem1Practice <= hi;
+    const sem2Ok = sem2Practice >= lo && sem2Practice <= hi;
+    add(sem1Ok && sem2Ok, '학기별 이론:실습 비율(20:80 ±10%p)',
+        `1학기 실습 ${sem1Practice}% (이론${semAgg['1'].theory}h/실습${semAgg['1'].practice}h) / 2학기 실습 ${sem2Practice}% (이론${semAgg['2'].theory}h/실습${semAgg['2'].practice}h)`,
+        `학기별 실습 ${lo}~${hi}%`,
+        (sem1Ok && sem2Ok) ? '' : `${!sem1Ok ? '1학기' : ''}${(!sem1Ok && !sem2Ok) ? ', ' : ''}${!sem2Ok ? '2학기' : ''} 이론:실습 비율이 기준을 벗어났습니다.`);
+  }
+  if (cl.c_semSeriesCommon) {
+    const sem1Ratio = semRatio(semAgg['1'].seriesCommon, semAgg['1'].total);
+    const sem2Ratio = semRatio(semAgg['2'].seriesCommon, semAgg['2'].total);
+    const sem1Ok = sem1Ratio >= std.seriesCommonRatioMin && sem1Ratio <= std.seriesCommonRatioMax;
+    const sem2Ok = sem2Ratio >= std.seriesCommonRatioMin && sem2Ratio <= std.seriesCommonRatioMax;
+    add(sem1Ok && sem2Ok, '학기별 계열공통교과 비율',
+        `1학기 ${sem1Ratio}%(${semAgg['1'].seriesCommon}h/${semAgg['1'].total}h) / 2학기 ${sem2Ratio}%(${semAgg['2'].seriesCommon}h/${semAgg['2'].total}h)`,
+        `학기별 ${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
+        (sem1Ok && sem2Ok) ? '' : `${!sem1Ok ? '1학기' : ''}${(!sem1Ok && !sem2Ok) ? ', ' : ''}${!sem2Ok ? '2학기' : ''} 계열공통교과 비율이 기준을 벗어났습니다.`);
+  }
+  if (cl.c_semProject) {
+    const projectRatioFusion = totalHours ? Math.round(projectHours / totalHours * 1000) / 10 : 0;
+    const inRange = projectRatioFusion >= std.projectRatioMin && projectRatioFusion <= std.projectRatioMax;
+    const offeredSems = [...new Set(projectCourses.flatMap(c => [...c.sems]))];
+    const offered = offeredSems.length > 0;
+    add(inRange && offered, '프로젝트실습 비율(1·2학기 중 편성)',
+        `${projectRatioFusion}% (${projectHours}h/총 ${totalHours}h), 편성학기: ${offered ? offeredSems.join(',') : '없음'}`,
+        `전체 ${std.projectRatioMin}~${std.projectRatioMax}%, 1학기 또는 2학기 편성`,
+        (inRange && offered) ? '' : (!offered ? '「프로젝트실습」 포함 교과명을 찾지 못했습니다.' : '프로젝트실습 비율이 기준 범위를 벗어났습니다.'));
+  }
+  if (cl.c_semCapstone) {
+    const inSem2 = !!capstoneCourse && capstoneCourse.sems.has('2');
+    const hoursOk = !!capstoneCourse && capstoneCourse.semTotal >= (std.capstoneHours || 40);
+    add(inSem2 && hoursOk, '종합실습 2학기 필수 편성',
+        capstoneCourse ? `${capstoneCourse.semTotal}h(${[...capstoneCourse.sems].join(',') || '-'}학기)` : '미편성',
+        `2학기 ${std.capstoneHours || 40}h 필수`,
+        !capstoneCourse ? '「종합실습」 교과를 찾지 못했습니다.' : (!inSem2 ? '2학기 편성이 확인되지 않았습니다.' : (!hoursOk ? '편성시간이 기준에 미달합니다.' : '')));
+  }
 
   renderCheckResult(courseKey, checks);
 }
