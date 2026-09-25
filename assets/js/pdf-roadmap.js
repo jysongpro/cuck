@@ -380,3 +380,126 @@ async function analyzeRoadmap(file, locationText, startYear, aiPageRange) {
 
   return { info, startPage, courses, groups, summary, narrative };
 }
+
+/* =========================================================================
+ * 전문기술과정 "마.교과목구성" 표 전용 분석기 (시간총량 기반, 학위과정 로드맵과 열 구조가 다름)
+ * ========================================================================= */
+const VOC_BOUNDS = { GWAN: [55, 100], NAME: [100, 200], HOURS: [200, 225],
+  SEM_TOTAL: [400, 430], SEM1: [430, 460], SEM2: [460, 500] };
+const VOC_GWAN_LABELS = ['교양교과', '기초기술교과', '계열공통교과', '특화전공교과'];
+
+function vocInRange(x, r) { return x >= r[0] && x < r[1]; }
+
+function vocClusterRows(items, tol) {
+  const sorted = items.slice().sort((a, b) => a.top - b.top || a.x - b.x);
+  const rows = [];
+  let cur = null;
+  for (const it of sorted) {
+    if (!cur || it.top - cur.top > tol) { cur = { top: it.top, items: [] }; rows.push(cur); }
+    cur.items.push(it);
+  }
+  return rows;
+}
+
+/* 인접한 두 클러스터(같은 시각적 행이 baseline 차이로 분리된 경우)를 하나로 합침 */
+function vocMergeAdjacent(rows, gapTol) {
+  const merged = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (i + 1 < rows.length && (rows[i + 1].top - rows[i].top) <= gapTol) {
+      merged.push({ top: rows[i].top, items: rows[i].items.concat(rows[i + 1].items) });
+      i++;
+    } else {
+      merged.push(rows[i]);
+    }
+  }
+  return merged;
+}
+
+function vocRowText(row, range) {
+  return row.items.filter(it => vocInRange(it.cx != null ? it.cx : it.x, range))
+    .sort((a, b) => a.x - b.x).map(it => it.str).join('');
+}
+
+/* 한 페이지에서 "마.교과목구성" 표의 교과목 행을 추출 */
+function extractVocTechCourses(items) {
+  const rows = vocMergeAdjacent(vocClusterRows(items, 2.3), 1.6);
+  // 1) 구분(교양교과 등) 레이블 위치 수집 — 세로 병합 셀이라 그룹 중간쯤에 한 번만 나타남
+  const labelPos = [];
+  rows.forEach(r => {
+    const t = despace(vocRowText(r, VOC_BOUNDS.GWAN));
+    const hit = VOC_GWAN_LABELS.find(l => t.includes(l));
+    if (hit) labelPos.push({ top: r.top, label: hit });
+  });
+  labelPos.sort((a, b) => a.top - b.top);
+  function gwanAt(top) {
+    if (!labelPos.length) return '';
+    let idx = 0;
+    for (let i = 0; i < labelPos.length; i++) { if (top >= labelPos[i].top) idx = i; }
+    return labelPos[idx].label;
+  }
+
+  const courses = [];
+  rows.forEach(r => {
+    const name = vocRowText(r, VOC_BOUNDS.NAME).trim();
+    const hoursStr = vocRowText(r, VOC_BOUNDS.HOURS).trim();
+    if (!name || !isNumStr(hoursStr)) return;
+    if (name === '소계' || name === '총계') return;
+    const sem1Str = vocRowText(r, VOC_BOUNDS.SEM1).trim();
+    const sem2Str = vocRowText(r, VOC_BOUNDS.SEM2).trim();
+    const sem1 = isNumStr(sem1Str) ? Number(sem1Str) : 0;
+    const sem2 = isNumStr(sem2Str) ? Number(sem2Str) : 0;
+    const gwan = gwanAt(r.top);
+    if (sem1 > 0) courses.push({ name, gwan, semester: '1', credit: sem1 });
+    if (sem2 > 0) courses.push({ name, gwan, semester: '2', credit: sem2 });
+    if (sem1 <= 0 && sem2 <= 0) courses.push({ name, gwan, semester: '', credit: Number(hoursStr) });
+  });
+  return courses;
+}
+
+/* 전문기술과정 PDF 분석 진입점 — "마.교과목구성" 표를 찾아 여러 페이지에 걸쳐 교과목을 수집 */
+async function analyzeVocTech(file, locationText, aiPageRange) {
+  if (!window.pdfjsLib) throw new Error('PDF 라이브러리를 불러오지 못했습니다.');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf, disableWorker: true }).promise;
+  const locKey = despace(locationText) || '교과목구성';
+  const core = locKey.replace(/^[가-힣]\.\s*/, '');
+  const anchor = core.length >= 3 ? core : locKey;
+
+  let info = {};
+  try {
+    let infoLines = [];
+    for (let p = 1; p <= Math.min(2, pdf.numPages); p++) {
+      infoLines = infoLines.concat(pageLines(await roadmapPageItems(await pdf.getPage(p))));
+    }
+    info = extractDocInfo(infoLines);
+  } catch (e) { info = {}; }
+
+  let startPage = -1;
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const items = await roadmapPageItems(await pdf.getPage(p));
+    const joined = despace(items.map(it => it.str).join(''));
+    if (joined.includes(locKey) || (core.length >= 3 && joined.includes(core))) { startPage = p; break; }
+  }
+  if (startPage === -1) throw new Error(`분석할 파일 위치("${locationText}")를 PDF에서 찾지 못했습니다. 표 제목이 정확히 일치하는지 확인해 주세요.`);
+
+  let courses = [];
+  const maxScan = Math.min(pdf.numPages, startPage + 3);
+  for (let p = startPage; p <= maxScan; p++) {
+    const page = await pdf.getPage(p);
+    const items = await roadmapPageItems(page);
+    const found = extractVocTechCourses(items);
+    if (p > startPage && found.length === 0) break; // 표가 끝난 것으로 판단
+    courses = courses.concat(found);
+  }
+  if (!courses.length) throw new Error('표는 찾았지만 교과목 데이터를 읽어오지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
+
+  let narrative = null;
+  if (aiPageRange) {
+    try {
+      const fullText = await extractFullText(pdf, aiPageRange);
+      narrative = extractIndustrialAiNarrative(fullText);
+    } catch (e) { narrative = null; }
+  }
+
+  return { info, courses, startPage, narrative };
+}

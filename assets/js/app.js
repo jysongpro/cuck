@@ -1519,6 +1519,21 @@ async function runRoadmapAnalyze(courseKey) {
   msg.innerHTML = `<div class="notice info"><span class="n-ico">${ICON.info}</span><div><b>${esc(selectedPdf.name)}</b> 분석 중입니다… (수십 페이지 PDF는 잠시 걸릴 수 있습니다)</div></div>`;
   if (btn) btn.disabled = true;
   try {
+    if (courseKey === 'voc-tech') {
+      const res = await analyzeVocTech(selectedPdf, loc, aiPages);
+      msg.innerHTML = '';
+      lastDocInfo = res.info || {};
+      lastNarrative = res.narrative || {};
+      curriculumRows = res.courses.map(c => ({
+        name: c.name, gwan: c.gwan, semester: c.semester, category: '',
+        credit: c.credit, theory: '', practice: '',
+      }));
+      refreshRows();
+      renderVocTechResult(courseKey, res);
+      const ra = $('#resultArea'); if (ra) ra.innerHTML = '';
+      toast(res.courses.length + '개 교과목을 읽어왔습니다. [세부기준 체크]로 검수하세요.');
+      return;
+    }
     const res = await analyzeRoadmap(selectedPdf, loc, roadmapStartYear(courseKey), aiPages);
     msg.innerHTML = '';
     lastDocInfo = res.info || {};
@@ -1543,6 +1558,46 @@ async function runRoadmapAnalyze(courseKey) {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+function renderVocTechResult(courseKey, res) {
+  const info = res.info || {};
+  const infoItem = (k, v) => `<div class="info-item"><span class="ik">${k}</span><span class="iv">${esc(v || '-')}</span></div>`;
+  const rowTr = (c, i) => `<tr>
+    <td>${i + 1}</td><td>${esc(c.gwan || '-')}</td><td class="rc-name">${esc(c.name)}</td>
+    <td class="rc-n">${c.semester || '-'}</td><td class="rc-n">${c.credit}</td></tr>`;
+  $('#roadmapResult').innerHTML = `
+    <div class="panel-head" style="border:0;padding:18px 0 12px"><h2>교육운영계획서 정보</h2></div>
+    <div class="panel info-card"><div class="info-grid">
+      ${infoItem('년도', info.년도)}
+      ${infoItem('캠퍼스', info.캠퍼스)}
+      ${infoItem('과정', info.과정)}
+      ${infoItem('계열', info.계열)}
+      ${infoItem('학과', info.학과)}
+      ${infoItem('전공', info.전공)}
+    </div></div>
+    <div class="panel-head" style="border:0;padding:18px 0 12px">
+      <h2>교과과정 보기</h2>
+      <span class="desc">${res.startPage}페이지 마.교과목구성 · 총 ${res.courses.length}개 행(학기별 시간 포함)</span>
+    </div>
+    <div class="panel" style="overflow-x:auto">
+      <table class="rc-table">
+        <thead><tr><th>순번</th><th>구분</th><th>교과목</th><th>학기</th><th>편성시간</th></tr></thead>
+        <tbody>${res.courses.map(rowTr).join('') || '<tr><td colspan="5" class="rc-empty">해당 교과 없음</td></tr>'}</tbody>
+      </table>
+    </div>
+    ${res.narrative && res.narrative.industrialAi ? `
+    <div class="panel-head" style="border:0;padding:18px 0 8px"><h2>산업AI교과 서술 확인 결과 (나.AI교과 섹션)</h2></div>
+    <div class="panel" style="padding:14px 16px;font-size:13.5px;line-height:1.6">${esc(res.narrative.industrialAi)}</div>
+    ` : (res.narrative ? `
+    <div class="panel-head" style="border:0;padding:18px 0 8px"><h2>산업AI교과 서술 확인 결과</h2></div>
+    <div class="notice warn" style="margin:0 0 4px"><span class="n-ico">${ICON.warn || ''}</span><div>문서에서 'AI교과' 섹션 내 '산업AI' 서술 내용을 찾지 못했습니다. 위 '산업AI교과 분석 페이지' 입력칸에 해당 내용이 있는 페이지 번호를 지정해 다시 읽어오세요.</div></div>
+    ` : '')}
+    <div class="toolbar" style="margin:18px 0 4px">
+      <button class="btn btn-primary" onclick="runCheck('${courseKey}')">${ICON.check} 세부기준 체크 (기준 적합성 검수)</button>
+      <span style="font-size:12.5px;color:var(--c-text-soft)">분석된 커리큘럼을 저장된 세부기준과 대조합니다.</span>
+    </div>`;
+  $('#roadmapResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderRoadmapResult(courseKey, res) {
