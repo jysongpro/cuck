@@ -545,7 +545,7 @@ function detectVocTimeBounds(items) {
   }
   if (!bounds.SEM2) bounds.SEM2 = [-2, -1];
   if (hoursLbl) {
-    const w = 14;
+    const w = 11;
     bounds.HOURS = [hoursLbl.x - w, hoursLbl.x + w];
     const nameLeft = nameLbl ? Math.min(VOC_BOUNDS.NAME[0], nameLbl.x - 60) : VOC_BOUNDS.NAME[0];
     bounds.NAME = [Math.max(nameLeft, VOC_BOUNDS.GWAN[1] - 5), hoursLbl.x - w];
@@ -587,28 +587,45 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     const cnt = vocReadCounts(r, bounds);
     return { top: r.top, name, hoursStr, cnt };
   });
+  // v1.9.1 — 능력단위 2~4개 교과목 처리
+  //  실제 PDF(예: 하이테크 반도체신뢰성테스트)는 교과목명이 능력단위 행들의 세로 가운데에 "이름만" 인쇄되고,
+  //  시간·NCS적용시간·편성시간(계/1학기/2학기)은 능력단위마다 별도 행(이름 없음)에 인쇄된다.
+  //  → 이름만 있는 행을 "다중 능력단위 교과목"으로 인정하고, 이름 없는 데이터 행(능력단위 행)을
+  //    가장 가까운 이름-only 교과목에 우선 합산한다(최대 4개 능력단위, 세로 거리 40pt 이내).
+  const HEADER_RE = /^(교과목명?|교과구분|구분|시간|능력단위.*|NCS.*|편성시간|비고)$/;
+  parsed.forEach(p => {
+    if (p.name === '총' || p.name === '소') p.name = p.name + '계';   // "계" 글자가 시간 칸으로 밀린 경우
+    p.hasData = isNumStr(p.hoursStr) || p.cnt.ncsHours !== '' || p.cnt.sem1 > 0 || p.cnt.sem2 > 0 || p.cnt.sem3 > 0 || (p.cnt.semTotal !== '' && p.cnt.semTotal > 0);
+    p.isTotal = p.name === '총계' || p.name === '소계';
+    p.nameOnly = !!p.name && !p.isTotal && !p.hasData && !HEADER_RE.test(despace(p.name)) && /[가-힣A-Za-z]/.test(p.name);
+  });
   const boundaries = parsed
-    .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0, extraSem3: 0 }))
-    .filter(p => p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계' || (p.cnt.semTotal !== '' && p.cnt.semTotal > 0 && !/교과|구분|시간|능력단위/.test(p.name))));
+    .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0, extraSem3: 0, extraHours: 0, units: 0 }))
+    .filter(p => p.isTotal || p.nameOnly || (p.name && p.hasData && !HEADER_RE.test(despace(p.name))));
 
   parsed.forEach(p => {
-    const isBoundary = p.name && (isNumStr(p.hoursStr) || p.name === '총계' || p.name === '소계' || (p.cnt.semTotal !== '' && p.cnt.semTotal > 0 && !/교과|구분|시간|능력단위/.test(p.name)));
-    if (isBoundary) return;
-    const hasData = p.cnt.ncsHours !== '' || p.cnt.sem1 > 0 || p.cnt.sem2 > 0 || p.cnt.sem3 > 0;
-    if (!hasData) return;
-    let best = null, bestDist = Infinity;
-    boundaries.forEach(b => {
-      if (b.name === '총계' || b.name === '소계') return;   // 능력단위 서브행은 항상 실제 교과목에 속하며, 소계/총계 행에는 붙지 않는다
-      const dist = Math.abs(b.top - p.top);
-      if (dist < bestDist) { bestDist = dist; best = b; }
-    });
-    if (best && bestDist <= 15) {
-      if (p.cnt.ncsHours !== '') best.extraNcs += p.cnt.ncsHours;
-      best.extraSem1 += p.cnt.sem1;
-      best.extraSem2 += p.cnt.sem2;
-      best.extraSem3 += p.cnt.sem3;
+    if (p.name || !p.hasData) return;                      // 이름 없는 데이터 행 = 능력단위 행
+    const near = (list) => {
+      let best = null, bestDist = Infinity;
+      list.forEach(b => { const d = Math.abs(b.top - p.top); if (d < bestDist) { bestDist = d; best = b; } });
+      return { best, bestDist };
+    };
+    // 1순위: 이름-only 교과목(다중 능력단위, 4개 미만 합산된 것), 2순위: 자기 값이 있는 교과목(구형 레이아웃)
+    let { best, bestDist } = near(boundaries.filter(b => b.nameOnly && b.units < 4));
+    if (!best || bestDist > 40) {
+      ({ best, bestDist } = near(boundaries.filter(b => !b.isTotal && !b.nameOnly)));
+      if (bestDist > 15) best = null;
     }
+    if (!best) return;
+    best.units++;
+    if (p.cnt.ncsHours !== '') best.extraNcs += p.cnt.ncsHours;
+    best.extraSem1 += p.cnt.sem1;
+    best.extraSem2 += p.cnt.sem2;
+    best.extraSem3 += p.cnt.sem3;
+    best.extraHours += isNumStr(p.hoursStr) ? Number(p.hoursStr) : (p.cnt.semTotal || 0);
   });
+  // 능력단위 행이 하나도 붙지 않은 이름-only 행(설명문 줄바꿈 등)은 교과목이 아니므로 제외
+  for (let i = boundaries.length - 1; i >= 0; i--) if (boundaries[i].nameOnly && !boundaries[i].units) boundaries.splice(i, 1);
 
   const courses = [];
   const subtotals = [];
@@ -633,12 +650,13 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     const sem2 = cnt.sem2 + b.extraSem2;
     const sem3 = cnt.sem3 + b.extraSem3;
     const gwan = groupOrder[state.groupIdx] || '';
-    const semTotal = cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr);
+    let semTotal = cnt.semTotal !== '' ? cnt.semTotal : (isNumStr(hoursStr) ? Number(hoursStr) : 0);
+    if (b.nameOnly) semTotal = (sem1 + sem2 + sem3) || b.extraHours;   // 다중 능력단위: 능력단위 합계
     const finalNcs = ncsHours || '';
     if (sem1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: sem1 });
     if (sem2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: sem2 });
     if (sem3 > 0) courses.push({ name, gwan, semester: '3', ncsHours: finalNcs, semTotal, credit: sem3 });
-    if (sem1 <= 0 && sem2 <= 0 && sem3 <= 0) courses.push({ name, gwan, semester: '', ncsHours: finalNcs, semTotal, credit: Number(hoursStr) });
+    if (sem1 <= 0 && sem2 <= 0 && sem3 <= 0) courses.push({ name, gwan, semester: '', ncsHours: finalNcs, semTotal, credit: semTotal });
   });
   return { courses, subtotals, totalRow };
 }
