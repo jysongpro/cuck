@@ -486,6 +486,36 @@ a { color: inherit; text-decoration: none; }
   .vtable { font-size: 12px; }
   .vtable th, .vtable td { padding: 6px 8px; }
 }
+
+/* 검수내역(hist-table) — 화면이 좁아져도 가로 스크롤 없이 전체 컬럼이 보이도록, 고정 레이아웃 + 컬럼별 비율폭으로 전환.
+   내용 길이가 짧은 컬럼(순번/계열/판정/충족률 등)은 좁게, 긴 컬럼(과정/학과/비고 등)은 넓게 배분하고,
+   폭이 부족해지면 줄바꿈(ellipsis 대신 normal)으로 내용을 유지한다. */
+.hist-table-wrap { overflow-x: visible; }
+.hist-table { table-layout: fixed; width: 100%; }
+.hist-table th, .hist-table td { white-space: normal; word-break: keep-all; overflow-wrap: break-word; max-width: none; }
+.hist-table .col-chk { width: 3%; }
+.hist-table .col-no { width: 4%; }
+.hist-table .col-course { width: 9%; }
+.hist-table .col-track { width: 8%; }
+.hist-table .col-univ { width: 9%; }
+.hist-table .col-campus { width: 8%; }
+.hist-table .col-series { width: 7%; }
+.hist-table .col-dept { width: 10%; }
+.hist-table .col-major { width: 9%; }
+.hist-table .col-pathway { width: 6%; }
+.hist-table .col-date { width: 9%; }
+.hist-table .col-verdict { width: 5%; }
+.hist-table .col-rate { width: 5%; }
+.hist-table .col-remark { width: 10%; }
+.hist-table .col-manage { width: 8%; }
+@media (max-width: 900px) {
+  .hist-table { font-size: 10.5px; }
+  .hist-table th, .hist-table td { padding: 4px 3px; }
+}
+@media (max-width: 600px) {
+  .hist-table { font-size: 9px; }
+  .hist-table th, .hist-table td { padding: 3px 2px; }
+}
 .vtable thead th {
   background: var(--c-navy-800); color: #fff; font-weight: 700; font-size: 13px;
   padding: 11px 12px; text-align: center; border: 1px solid var(--c-navy-700);

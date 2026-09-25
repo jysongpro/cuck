@@ -2414,11 +2414,11 @@ function renderHistory() {
         </div>` : `
         <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
           <div>검수결과 보기만 가능합니다. 삭제·엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div></div>`}
-        <div class="panel" style="overflow-x:auto">
-          <table class="vtable">
+        <div class="panel hist-table-wrap">
+          <table class="vtable hist-table">
             <thead><tr>
-              ${isAdmin() ? '<th></th>' : ''}<th>순번</th><th>과정</th>${historyFilter.cat === 'vocational' ? '<th>구분(시간)</th>' : ''}<th>대학</th><th>캠퍼스</th><th>계열</th><th>학과</th><th>${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>
-              <th>과정평가형</th><th>저장일시</th><th>판정</th><th>충족률</th><th>비고</th><th>관리</th>
+              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">구분(시간)</th>' : ''}<th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>
+              <th class="col-pathway">과정평가형</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
