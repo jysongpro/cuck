@@ -548,12 +548,30 @@ async function analyzeVocTech(file, locationText, aiPageRange) {
       };
   const summary = { groups, total: total.hours, totalInfo: total };
 
-  let narrative = null;
+  const narrative = {};
   if (aiPageRange) {
     try {
       const fullText = await extractFullText(pdf, aiPageRange);
-      narrative = extractIndustrialAiNarrative(fullText);
-    } catch (e) { narrative = null; }
+      narrative.industrialAi = extractIndustrialAiNarrative(fullText);
+      narrative.aiPageRange = aiPageRange || null;
+      // "나.AI교과" 표 내 "산업AI교과" 행의 1~4학기 셀에 적힌 교과명을 모두 수집(50개 풀 외 학과 자율편성 포함)
+      const from = aiPageRange && aiPageRange.from > 0 ? aiPageRange.from : 1;
+      const to = aiPageRange && aiPageRange.to > 0 ? Math.min(aiPageRange.to, pdf.numPages) : pdf.numPages;
+      let tableCourses = [];
+      for (let p = from; p <= to; p++) {
+        const page = await pdf.getPage(p);
+        const items = await roadmapPageItems(page);
+        tableCourses = tableCourses.concat(extractIndustrialAiTableCourses(items));
+      }
+      const seen = new Set();
+      const uniqTableCourses = tableCourses.filter(c => {
+        if (seen.has(c.name)) return false;
+        seen.add(c.name);
+        return true;
+      });
+      narrative.industrialAiCourses = uniqTableCourses.map(c => c.name);
+      narrative.industrialAiCredit = uniqTableCourses.reduce((s, c) => s + (c.credit || 0), 0);
+    } catch (e) { console.error('[voc-tech narrative extract error]', e); }
   }
 
   return { info, courses, startPage, narrative, summary };

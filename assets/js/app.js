@@ -1482,6 +1482,7 @@ function emptyRow() { return { name: '', gwan: '전공', semester: '', category:
 let selectedPdf = null;
 let lastDocInfo = {};   // 마지막 분석한 교육운영계획서 정보(저장 파일명·헤더용)
 let lastNarrative = {}; // 마지막 분석 시 추출된 서술형 본문·표 기반 산업AI교과 목록
+let lastVocSummary = null; // 마지막 전문기술과정 PDF 분석 시 산출된 소계/총계(res.summary) — 시간기준 검수에 그대로 사용
 let lastCheck = null;   // 마지막 검수 결과(저장용)
 function onPdfPick(ev) { const f = ev.target.files[0]; if (f) setPdf(f); }
 function onPdfDrop(ev) { ev.preventDefault(); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if (f) setPdf(f); }
@@ -1524,6 +1525,7 @@ async function runRoadmapAnalyze(courseKey) {
       msg.innerHTML = '';
       lastDocInfo = res.info || {};
       lastNarrative = res.narrative || {};
+      lastVocSummary = res.summary || null;
       curriculumRows = res.courses.map(c => ({
         name: c.name, gwan: c.gwan, semester: c.semester, category: '',
         credit: c.credit, theory: '', practice: '',
@@ -1817,15 +1819,18 @@ function runVocTechCheck(courseKey) {
   });
   const courses = Object.values(byName);
 
-  const totalHours = courses.reduce((s, c) => s + c.semTotal, 0);
-  const majorHours = courses.filter(c => c.gwan === '계열공통' || c.gwan === '특화전공').reduce((s, c) => s + c.semTotal, 0);
+  // 총 편성시간은 교과목명 재집계(이름 불일치·추출 오차에 취약)하지 않고, PDF 표에 이미 인쇄된 "총계" 행 값(res.summary.total)을 그대로 사용해 정합성을 보장한다.
+  const totalHours = (lastVocSummary && lastVocSummary.total != null) ? lastVocSummary.total : courses.reduce((s, c) => s + c.semTotal, 0);
+  // 전공교과비율 = (기초기술교과+계열공통교과+특화전공교과) 편성시간 합계 / 총 편성시간
+  const majorHours = courses.filter(c => c.gwan === '기초기술' || c.gwan === '계열공통' || c.gwan === '특화전공').reduce((s, c) => s + c.semTotal, 0);
   const majorRatio = totalHours ? Math.round(majorHours / totalHours * 1000) / 10 : 0;
   const liberalCourses = courses.filter(c => c.gwan === '교양교과');
   const liberalHours = liberalCourses.reduce((s, c) => s + c.semTotal, 0);
-  // 이론:실습 비율 — 이론=교양교과+기초기술교과, 실습=계열공통+특화전공(=majorHours) 시간의 합으로 산정
+  // 이론:실습 비율 — 이론=교양교과+기초기술교과, 실습=계열공통+특화전공 시간의 합으로 산정(전공교과비율과는 별개 기준)
   const baseTechHours = courses.filter(c => c.gwan === '기초기술').reduce((s, c) => s + c.semTotal, 0);
+  const seriesSpecHours = courses.filter(c => c.gwan === '계열공통' || c.gwan === '특화전공').reduce((s, c) => s + c.semTotal, 0);
   const theoryHours = liberalHours + baseTechHours;
-  const practiceHours = majorHours;
+  const practiceHours = seriesSpecHours;
   const theoryPracticeTotal = theoryHours + practiceHours;
   const theoryRatioCalc = theoryPracticeTotal ? Math.round(theoryHours / theoryPracticeTotal * 1000) / 10 : 0;
   const practiceRatioCalc = theoryPracticeTotal ? Math.round(practiceHours / theoryPracticeTotal * 1000) / 10 : 0;
@@ -1837,16 +1842,32 @@ function runVocTechCheck(courseKey) {
   const projectHours = projectCourses.reduce((s, c) => s + c.semTotal, 0);
   const projectRatio = totalHours ? Math.round(projectHours / totalHours * 1000) / 10 : 0;
   const capstoneCourse = courses.find(c => /종합실습/.test(c.name));
-  const safetyCourse = courses.find(c => /산업\s*안전/.test(c.name));
-  const aiAppliedCourse = courses.find(c => /AI/i.test(c.name) && /활용|적용/.test(c.name));
-  const industrialAiCourse = courses.find(c => /산업\s*AI/i.test(c.name));
+  // 산업안전 관련 교과는 실제 PDF에서 "일반산업안전", "전기산업안전"처럼 2개 이상으로 나뉘어 편성되는 경우가 있어, 매칭되는 모든 교과의 시간을 합산한다.
+  const safetyCourses = courses.filter(c => /산업\s*안전/.test(c.name));
+  const safetyHoursSum = safetyCourses.reduce((s, c) => s + c.semTotal, 0);
+  const safetySemesters = new Set();
+  safetyCourses.forEach(c => c.sems.forEach(s => safetySemesters.add(s)));
+  const safetyCourse = safetyCourses[0] || null;
+
+  // AI활용교과 · 산업AI교과 판정 — 학위과정과 동일하게 "AI활용교과/산업AI교과 설정"에 저장된 교과명 목록과 대조한다.
+  // 산업AI교과는 추가로 "나.AI교과" 표의 '산업AI교과' 행에서 직접 추출된 교과명(lastNarrative.industrialAiCourses, 학과 자율편성 포함)도 인정한다.
+  const norm = (s) => (s || '').replace(/\s+/g, '');
+  const aiAppliedNames = SimpleListStore.get('aiApplied', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+  const industrialAiNames = SimpleListStore.get('industrialAi', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+  const industrialAiTableNames = (lastNarrative && lastNarrative.industrialAiCourses) || [];
+  const aiAppliedCourse = courses.find(c => aiAppliedNames.some(n => norm(c.name).includes(norm(n))))
+    || courses.find(c => /AI/i.test(c.name) && /활용|적용/.test(c.name));   // 설정이 없으면 교과명 패턴으로만 보조 판단
+  const industrialAiCourse = courses.find(c => industrialAiNames.some(n => norm(c.name).includes(norm(n))))
+    || courses.find(c => industrialAiTableNames.some(n => norm(c.name).includes(norm(n))))
+    || courses.find(c => /산업\s*AI/i.test(c.name));
+
   const overMaxCourses = courses.filter(c => (c.semTotal - c.ncsHours) > (std.courseHoursMax || Infinity));
   const splitCourses = courses.filter(c => c.sems.size > 1 && !std.splitAllowed);
 
   const checks = [];
   const add = (ok, title, val, req, detail = '') => checks.push({ ok, title, val, req, detail });
 
-  if (cl.c_totalHours) add(totalHours === std.totalHours, '총 운영시간', totalHours + 'h', std.totalHours + 'h',
+  if (cl.c_totalHours) add(totalHours === std.totalHours, '총 편성시간', totalHours + 'h', std.totalHours + 'h',
       totalHours !== std.totalHours ? `실제 편성 ${totalHours}h (기준 ${std.totalHours}h)` : '');
   if (cl.c_ratio) {
     const practiceOk = practiceRatioCalc >= (std.practiceRatio - std.ratioTolerance) && practiceRatioCalc <= (std.practiceRatio + std.ratioTolerance);
@@ -1854,7 +1875,7 @@ function runVocTechCheck(courseKey) {
         `실습 ${std.practiceRatio - std.ratioTolerance}~${std.practiceRatio + std.ratioTolerance}% (이론=교양교과+기초기술, 실습=계열공통+특화전공)`,
         practiceOk ? '' : `실습 비율이 기준 범위를 벗어났습니다 (실제 ${practiceRatioCalc}%).`);
   }
-  if (cl.c_major) add(majorRatio >= std.majorRatioMin, '전공교과(계열공통+특화전공) 비율', majorRatio + '%', `≥ ${std.majorRatioMin}%`,
+  if (cl.c_major) add(majorRatio >= std.majorRatioMin, '전공교과(기초기술+계열공통+특화전공) 비율', majorRatio + '%', `≥ ${std.majorRatioMin}%`,
       majorRatio < std.majorRatioMin ? `전공교과 ${majorHours}h / 총 ${totalHours}h` : '');
   if (cl.c_courseMax) add(overMaxCourses.length === 0, '과목당 편성시간(NCS 제외)', overMaxCourses.length + '개 과목 초과', `≤ ${std.courseHoursMax}h`,
       overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
@@ -1868,19 +1889,24 @@ function runVocTechCheck(courseKey) {
       '계열공통교과 비율', seriesCommonRatio + '%', `${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
       `계열공통 ${seriesCommonHours}h / 총 ${totalHours}h`);
   if (cl.c_project) add(projectRatio >= std.projectRatioMin && projectRatio <= std.projectRatioMax,
-      '프로젝트실습 비율', projectRatio + '%', `${std.projectRatioMin}~${std.projectRatioMax}%`,
+      '프로젝트실습 비율', `${projectRatio}% (${projectHours}h / 총 ${totalHours}h)`, `${std.projectRatioMin}~${std.projectRatioMax}%`,
       projectCourses.length ? `해당 교과: ${projectCourses.map(c => c.name).join(', ')}` : '「프로젝트실습」 포함 교과명을 찾지 못했습니다.');
   if (cl.c_capstone) add(!!capstoneCourse && capstoneCourse.semTotal >= std.capstoneHours, '종합실습 편성시간',
       capstoneCourse ? capstoneCourse.semTotal + 'h' : '미편성', `≥ ${std.capstoneHours}h`,
       !capstoneCourse ? '「종합실습」 교과를 찾지 못했습니다.' : '');
-  if (cl.c_safety) add(!!safetyCourse && safetyCourse.semTotal >= (std.safetyHours || 0), '산업안전교과 편성', safetyCourse ? `${safetyCourse.semTotal}h(${[...safetyCourse.sems].join(',') || '-'}학기)` : '미편성', `≥ ${std.safetyHours || 16}h, 2학기만 허용`,
-      !safetyCourse ? '「산업안전」 교과를 찾지 못했습니다.' : (safetyCourse.sems.has('1') ? '1학기 편성은 허용되지 않습니다.' : ''));
-  if (cl.c_aiApplied) add(!!aiAppliedCourse && aiAppliedCourse.semTotal >= (std.aiAppliedHours || 0), 'AI활용교과 편성시간',
-      aiAppliedCourse ? aiAppliedCourse.semTotal + 'h' : '미편성', `≥ ${std.aiAppliedHours || 20}h`,
-      !aiAppliedCourse ? 'AI활용 관련 교과를 찾지 못했습니다.' : '');
-  if (cl.c_industrialAi) add(!!industrialAiCourse && industrialAiCourse.semTotal >= (std.industrialAiHoursMin || 0) && industrialAiCourse.semTotal <= (std.industrialAiHoursMax || Infinity),
-      '산업AI교과 편성시간', industrialAiCourse ? industrialAiCourse.semTotal + 'h' : '미편성', `${std.industrialAiHoursMin || 20}~${std.industrialAiHoursMax || 40}h`,
-      !industrialAiCourse ? '「산업AI」 교과를 찾지 못했습니다.' : '');
+  if (cl.c_safety) {
+    const safetyOk = safetyCourses.length > 0 && safetyHoursSum >= (std.safetyHours || 0) && !safetySemesters.has('1');
+    add(safetyOk, '산업안전교과 편성',
+        safetyCourses.length ? `${safetyHoursSum}h(${safetyCourses.map(c => c.name).join(', ')}, ${[...safetySemesters].join(',') || '-'}학기)` : '미편성',
+        `≥ ${std.safetyHours || 16}h, 2학기만 허용`,
+        !safetyCourses.length ? '「산업안전」 교과를 찾지 못했습니다.' : (safetySemesters.has('1') ? '1학기 편성은 허용되지 않습니다.' : (safetyHoursSum < (std.safetyHours || 0) ? '편성시간이 기준에 미달합니다.' : '')));
+  }
+  if (cl.c_aiApplied) add(!!aiAppliedCourse, 'AI활용교과 편성여부',
+      aiAppliedCourse ? `편성됨 (${aiAppliedCourse.name}, ${aiAppliedCourse.semTotal}h)` : '미편성', 'AI활용교과 설정에 등록된 교과 편성',
+      !aiAppliedCourse ? 'AI활용교과 설정에 등록된 교과명이 실제 편성된 교과목에서 발견되지 않았습니다.' : '');
+  if (cl.c_industrialAi) add(!!industrialAiCourse, '산업AI교과 편성여부',
+      industrialAiCourse ? `편성됨 (${industrialAiCourse.name}, ${industrialAiCourse.semTotal}h)` : '미편성', '산업AI교과 설정(50개 품) 등록 또는 PDF 2~3p AI교과표 산업AI교과 행 인식',
+      !industrialAiCourse ? '산업AI교과 설정 목록에도, PDF 2~3페이지 AI교과표 산업AI교과 행에도 해당하는 교과를 찾지 못했습니다.' : '');
 
   renderCheckResult(courseKey, checks);
 }
