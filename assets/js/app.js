@@ -24,6 +24,28 @@ const ICON = {
 
 /* ---------- 저장소(localStorage) -------------------------------------- */
 const STORE_KEY = 'kpu-curri-standards-v1';
+/* ---------- 시간총량 트랙(1,200h/600h) 선택 저장소 -------------------- */
+const VOC_TRACK_KEY = 'kpu-curri-voctrack-v1';
+const VocTrackStore = {
+  all() { try { return JSON.parse(localStorage.getItem(VOC_TRACK_KEY)) || {}; } catch { return {}; } },
+  get(courseKey) { return this.all()[courseKey] || '1200'; },
+  set(courseKey, track) {
+    const all = this.all(); all[courseKey] = track;
+    localStorage.setItem(VOC_TRACK_KEY, JSON.stringify(all));
+  },
+};
+// courseKey의 스펙이 durationTracks를 가지면 현재 선택된 트랙의 하위 스펙을, 아니면 원 스펙을 반환
+function effSpec(courseKey) {
+  const spec = COURSE_SPECS[courseKey];
+  if (spec && spec.durationTracks) return spec.durationTracks[VocTrackStore.get(courseKey)];
+  return spec;
+}
+// 저장소 키 — durationTracks가 있는 과정은 트랙별로 분리 저장(예: 'voc-tech__1200')
+function specStoreKey(courseKey) {
+  const spec = COURSE_SPECS[courseKey];
+  return (spec && spec.durationTracks) ? `${courseKey}__${VocTrackStore.get(courseKey)}` : courseKey;
+}
+
 const Store = {
   all() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
@@ -36,13 +58,14 @@ const Store = {
     return saved ? Object.assign({}, DEFAULT_STANDARDS[courseKey], saved)
                  : Object.assign({}, DEFAULT_STANDARDS[courseKey]);
   },
-  // 스펙 과정용 — { standards:{}, checklist:{} } (기본값 + 저장값 병합)
+  // 스펙 과정용 — { standards:{}, checklist:{} } (기본값 + 저장값 병합), 트랙별 분리
   getSpec(courseKey) {
-    const spec = COURSE_SPECS[courseKey];
+    const spec = effSpec(courseKey);
+    const skey = specStoreKey(courseKey);
     const d = { standards: {}, checklist: {} };
     spec.standardGroups.forEach(g => g.fields.forEach(f => d.standards[f.key] = f.def));
     spec.checklist.forEach(c => d.checklist[c.key] = c.def);
-    const saved = this.all()[courseKey] || {};
+    const saved = this.all()[skey] || {};
     return {
       standards: Object.assign({}, d.standards, saved.standards || {}),
       checklist: Object.assign({}, d.checklist, saved.checklist || {}),
@@ -50,10 +73,10 @@ const Store = {
   },
   saveSpec(courseKey, obj) {
     const all = this.all();
-    all[courseKey] = obj;
+    all[specStoreKey(courseKey)] = obj;
     localStorage.setItem(STORE_KEY, JSON.stringify(all));
   },
-  isSet(courseKey) { return !!this.all()[courseKey]; },
+  isSet(courseKey) { return !!this.all()[specStoreKey(courseKey)]; },
   save(courseKey, data) {
     const all = this.all();
     all[courseKey] = data;
@@ -61,7 +84,7 @@ const Store = {
   },
   reset(courseKey) {
     const all = this.all();
-    delete all[courseKey];
+    delete all[specStoreKey(courseKey)];
     localStorage.setItem(STORE_KEY, JSON.stringify(all));
   },
 };
@@ -71,7 +94,8 @@ const RULE_KEY = 'kpu-curri-courserules-v1';
 const CourseRuleStore = {
   all() { try { return JSON.parse(localStorage.getItem(RULE_KEY)) || {}; } catch { return {}; } },
   get(courseKey) {
-    const saved = this.all()[courseKey];
+    const skey = specStoreKey(courseKey);
+    const saved = this.all()[skey];
     const src = saved ? saved : (DEFAULT_COURSE_RULES[courseKey] || []);
     return src.map(r => {
       const o = Object.assign({}, r);
@@ -80,13 +104,13 @@ const CourseRuleStore = {
       return o;
     });
   },
-  isSet(courseKey) { return !!this.all()[courseKey]; },
+  isSet(courseKey) { return !!this.all()[specStoreKey(courseKey)]; },
   save(courseKey, rules) {
-    const all = this.all(); all[courseKey] = rules;
+    const all = this.all(); all[specStoreKey(courseKey)] = rules;
     localStorage.setItem(RULE_KEY, JSON.stringify(all));
   },
   reset(courseKey) {
-    const all = this.all(); delete all[courseKey];
+    const all = this.all(); delete all[specStoreKey(courseKey)];
     localStorage.setItem(RULE_KEY, JSON.stringify(all));
   },
 };
@@ -645,7 +669,15 @@ function renderStandards(courseKey) {
 function renderSpecStandards(courseKey, found) {
   const { cat, course } = found;
   showChrome(true);
-  const spec = COURSE_SPECS[courseKey];
+  const rawSpec = COURSE_SPECS[courseKey];
+  const spec = effSpec(courseKey);
+  const trackSwitchHtml = (rawSpec.durationTracks) ? `
+    <div class="track-switch" style="display:flex;gap:8px;margin-bottom:16px">
+      ${Object.keys(rawSpec.durationTracks).map(tk => `
+        <button class="btn ${VocTrackStore.get(courseKey) === tk ? 'btn-primary' : 'btn-ghost'}"
+          onclick="setVocTrack('${courseKey}','${tk}')">${esc(rawSpec.durationTracks[tk].trackLabel)}</button>
+      `).join('')}
+    </div>` : '';
   const saved = Store.getSpec(courseKey);
   const isSet = Store.isSet(courseKey);
   const onCount = Object.values(saved.checklist).filter(Boolean).length;
@@ -686,11 +718,13 @@ function renderSpecStandards(courseKey, found) {
       <div class="page-head">
         <span class="eyebrow">${esc(cat.title)} · 세부기준 설정</span>
         <h1>${esc(course.name)} — 교과편성 세부기준</h1>
-        <p>${esc(spec.sourceDoc)} 기준을 반영했습니다. 캠퍼스·학과 상황에 맞게 수정 후 저장하세요.</p>
+        <p>${esc(rawSpec.sourceDoc)} 기준을 반영했습니다. 캠퍼스·학과 상황에 맞게 수정 후 저장하세요.</p>
       </div>
 
+      ${trackSwitchHtml}
+
       <div class="notice info"><span class="n-ico">${ICON.info}</span>
-        <div>출처: <b>${esc(spec.sourceLabel)}</b> · ${isSet
+        <div>출처: <b>${esc(rawSpec.sourceLabel)}</b> · ${isSet
           ? '현재 <b>저장된 기준</b>이 적용되어 있습니다.'
           : '아직 저장 전이라 <b>공식 문서 기본값</b>이 표시됩니다.'}</div></div>
 
@@ -1296,12 +1330,25 @@ function semSpecText(spec) {
  * ========================================================================= */
 let curriculumRows = [];
 
+function setVocTrack(courseKey, track) {
+  VocTrackStore.set(courseKey, track);
+  navigate(location.hash.replace(/^#\//, ''));
+}
+
 function renderCheck(courseKey) {
   const found = findCourse(courseKey);
   if (!found) return renderHome();
   const { cat, course } = found;
   showChrome(true);
   if (curriculumRows.length === 0) curriculumRows = [emptyRow()];
+  const rawSpec0 = COURSE_SPECS[courseKey];
+  const checkTrackSwitchHtml = (rawSpec0 && rawSpec0.durationTracks) ? `
+    <div class="track-switch" style="display:flex;gap:8px;margin-bottom:16px">
+      ${Object.keys(rawSpec0.durationTracks).map(tk => `
+        <button class="btn ${VocTrackStore.get(courseKey) === tk ? 'btn-primary' : 'btn-ghost'}"
+          onclick="setVocTrack('${courseKey}','${tk}')">${esc(rawSpec0.durationTracks[tk].trackLabel)}</button>
+      `).join('')}
+    </div>` : '';
 
   $('#app').innerHTML = `
     <div class="container">
@@ -1315,6 +1362,8 @@ function renderCheck(courseKey) {
           ? '교육운영계획서(PDF)를 업로드해 교과과정을 읽어온 뒤, 설정된 세부기준과 대조하여 검수합니다.'
           : '편성한 교과목을 입력하거나 CSV 파일로 업로드한 뒤, 설정된 세부기준과 대조하여 검수합니다.'}</p>
       </div>
+
+      ${checkTrackSwitchHtml}
 
       ${Store.isSet(courseKey)
         ? `<div class="notice info"><span class="n-ico">${ICON.info}</span><div>이 과정의 <b>저장된 세부기준</b>으로 검수합니다.
@@ -1339,13 +1388,13 @@ function renderCheck(courseKey) {
             <div class="field" style="flex:1;margin:0">
               <label>분석할 파일 내 위치</label>
               <div class="input-wrap">
-                <input type="text" id="pdfLoc" value="8.교육훈련과정로드맵" placeholder="예: 8.교육훈련과정로드맵">
+                <input type="text" id="pdfLoc" value="${courseKey === 'voc-tech' ? '마.교과목구성' : '8.교육훈련과정로드맵'}" placeholder="예: 8.교육훈련과정로드맵">
               </div>
             </div>
             <div class="field" style="flex:0 0 220px;margin:0">
               <label>산업AI교과 분석 페이지 <span style="font-weight:400;color:var(--c-text-soft)">(선택)</span></label>
               <div class="input-wrap">
-                <input type="text" id="pdfAiPages" value="3" placeholder="예: 12 또는 12-14, 비우면 전체">
+                <input type="text" id="pdfAiPages" value="${courseKey === 'voc-tech' ? '2~3' : '3'}" placeholder="예: 12 또는 12-14, 비우면 전체">
               </div>
             </div>
             <button class="btn btn-primary" id="analyzeBtn" onclick="runRoadmapAnalyze('${courseKey}')" disabled>${ICON.check} 교과과정 읽어오기</button>
@@ -1934,6 +1983,7 @@ function saveCheckResultToHistory(courseKey) {
     },
     pathwayEval: false,   // 과정평가형 여부(체크박스, 검수내역 화면에서 직접 설정)
     remark: '',           // 비고(검수내역 화면에서 직접 입력)
+    trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
     allPass: lastCheck.allPass,
     passCount: lastCheck.passCount,
     total: lastCheck.checks.length,
@@ -1947,6 +1997,13 @@ function saveCheckResultToHistory(courseKey) {
  * 검수결과 내역(전체 학과 누적 관리 화면)
  * ========================================================================= */
 let historyFilter = { cat: '', univ: '', campus: '' };
+/* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
+function historyTrackLabel(r) {
+  const spec = COURSE_SPECS[r.courseKey];
+  if (!spec || !spec.durationTracks || !r.trackKey) return '-';
+  const t = spec.durationTracks[r.trackKey];
+  return t ? t.trackLabel : '-';
+}
 /* 검수내역 각 건이 학위과정/직업교육과정 중 어느 카테고리인지 조회 */
 function historyCatKey(r) {
   const found = findCourse(r.courseKey);
@@ -1986,6 +2043,7 @@ function renderHistory() {
       ${isAdmin() ? `<td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>` : ''}
       <td>${i + 1}</td>
       <td class="l">${esc(r.info.과정 || r.courseName)}</td>
+      <td>${esc(historyTrackLabel(r))}</td>
       <td class="l">${isAdmin() ? `<input type="text" class="hist-inline-input" data-id="${r.id}" data-field="대학" value="${esc(r.info.대학 || '')}" placeholder="대학명" onchange="updateHistoryField('${r.id}','대학',this.value)">` : esc(r.info.대학 || '-')}</td>
       <td>${esc(r.info.캠퍼스 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
@@ -2054,7 +2112,7 @@ function renderHistory() {
         <div class="panel" style="overflow-x:auto">
           <table class="vtable">
             <thead><tr>
-              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th><th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
+              ${isAdmin() ? '<th style="width:34px"></th>' : ''}<th style="width:44px">순번</th><th>과정</th><th style="width:100px">구분(시간)</th><th style="width:130px">대학</th><th>캠퍼스</th><th>학과</th><th>전공</th>
               <th style="width:80px">과정평가형</th><th>저장일시</th><th style="width:70px">판정</th><th style="width:70px">충족률</th><th style="width:150px">비고</th><th style="width:130px">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2101,11 +2159,12 @@ function exportHistoryToExcel() {
   if (!isAdmin()) { toast('엑셀 내려받기는 관리자만 이용할 수 있습니다.'); return; }
   const list = HistoryStore.all();
   if (!list.length) { toast('저장된 검수내역이 없습니다.'); return; }
-  const headers = ['순번', '과정', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
+  const headers = ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
       i + 1,
       r.info.과정 || r.courseName || '',
+      historyTrackLabel(r),
       r.info.대학 || '',
       r.info.캠퍼스 || '',
       r.info.학과 || '',
