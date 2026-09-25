@@ -1528,7 +1528,7 @@ async function runRoadmapAnalyze(courseKey) {
   if (btn) btn.disabled = true;
   try {
     if (isVocTimeBased(courseKey)) {
-      const res = await analyzeVocTech(selectedPdf, loc, aiPages);
+      const res = await analyzeVocTech(selectedPdf, loc, aiPages, courseKey);
       msg.innerHTML = '';
       lastDocInfo = res.info || {};
       lastNarrative = res.narrative || {};
