@@ -517,8 +517,8 @@ function renderHome() {
                 <span class="num">2</span>
                 <div class="icon-wrap">${ICON.tools}</div>
                 <h3>직업교육과정</h3>
-                <p>전문기술·하이테크·중장년특화장기<br>일반계위탁·기능장 과정 기준 검수</p>
-                <div class="tags"><span>전문기술</span><span>하이테크</span><span>중장년특화장기</span><span>일반계위탁</span><span>기능장</span></div>
+                <p>전문기술·하이테크·중장년특화장기<br>과정 기준 검수</p>
+                <div class="tags"><span>전문기술</span><span>하이테크</span><span>중장년특화장기</span></div>
               </button>
             </div>
           </div>
@@ -537,6 +537,24 @@ function renderHome() {
                        border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
                        color:#fff;font-weight:600;cursor:pointer;">
           ${ICON.check} 학위전공심화과정 체크하기
+        </button>
+        <button class="btn btn-quick" onclick="navigate('cat/vocational/check/voc-tech')"
+                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
+                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
+                       color:#fff;font-weight:600;cursor:pointer;">
+          ${ICON.check} 전문기술과정 체크하기
+        </button>
+        <button class="btn btn-quick" onclick="navigate('cat/vocational/check/voc-hitech')"
+                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
+                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
+                       color:#fff;font-weight:600;cursor:pointer;">
+          ${ICON.check} 하이테크과정 체크하기
+        </button>
+        <button class="btn btn-quick" onclick="navigate('cat/vocational/check/voc-senior')"
+                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
+                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
+                       color:#fff;font-weight:600;cursor:pointer;">
+          ${ICON.check} 중장년특화장기과정 체크하기
         </button>
       </div>
       <div class="home-footer">
@@ -2531,7 +2549,30 @@ function saveCheckResultToHistory(courseKey) {
 /* =========================================================================
  * 검수결과 내역(전체 학과 누적 관리 화면)
  * ========================================================================= */
-let historyFilter = { cat: 'degree', univ: '', campus: '', series: '' };
+let historyFilter = { cat: 'degree', univ: '', campus: '', series: '', verdict: '' };
+/* 검수내역 기간 검색(저장일시 기준) — 마지막 검색값을 브라우저에 기억 */
+const HIST_DATE_KEY = 'kpu-curri-histdate-v1';
+const HistDateStore = {
+  get() { try { return Object.assign({ from: '', to: '' }, JSON.parse(localStorage.getItem(HIST_DATE_KEY)) || {}); } catch { return { from: '', to: '' }; } },
+  set(v) { localStorage.setItem(HIST_DATE_KEY, JSON.stringify({ from: v.from || '', to: v.to || '' })); },
+};
+function setHistoryDate(field, value) {
+  const d = HistDateStore.get(); d[field] = value || '';
+  if (d.from && d.to && d.from > d.to) { toast('시작일이 종료일보다 늦습니다. 기간을 확인해 주세요.'); }
+  HistDateStore.set(d); renderHistory();
+}
+function setHistoryDatePreset(kind) {
+  const p = (x) => String(x).padStart(2, '0');
+  const f = (dt) => `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+  const t = new Date(), from = new Date();
+  if (kind === 'today') {}
+  else if (kind === '7d') from.setDate(t.getDate() - 6);
+  else if (kind === '1m') from.setMonth(t.getMonth() - 1);
+  else if (kind === '3m') from.setMonth(t.getMonth() - 3);
+  if (kind === 'all') HistDateStore.set({ from: '', to: '' });
+  else HistDateStore.set({ from: f(from), to: f(t) });
+  renderHistory();
+}
 /* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
 function historyTrackLabel(r) {
   const spec = COURSE_SPECS[r.courseKey];
@@ -2552,13 +2593,15 @@ function setHistoryFilter(field, value) {
   renderHistory();
 }
 function resetHistoryFilter() {
+  historyFilter.verdict = '';
+  HistDateStore.set({ from: '', to: '' });
   historyFilter.univ = '';
   historyFilter.campus = '';
   historyFilter.series = '';
   renderHistory();
 }
 function setHistoryTab(tabKey) {
-  historyFilter = { cat: tabKey, univ: '', campus: '', series: '' };
+  historyFilter = { cat: tabKey, univ: '', campus: '', series: '', verdict: historyFilter.verdict || '' };
   renderHistory();
 }
 function renderHistory() {
@@ -2579,10 +2622,14 @@ function renderHistory() {
   const seriesOptions = [...new Set(seriesScope.map(r => r.info.계열).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
 
   /* ---- 필터 적용 ---- */
+  const hDate = HistDateStore.get();
   const list = tabScope.filter(r =>
     (!historyFilter.univ || r.info.대학 === historyFilter.univ) &&
     (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus) &&
-    (!historyFilter.series || r.info.계열 === historyFilter.series)
+    (!historyFilter.series || r.info.계열 === historyFilter.series) &&
+    (!historyFilter.verdict || (historyFilter.verdict === 'pass' ? r.allPass : !r.allPass)) &&
+    (!hDate.from || String(r.savedAt || '').slice(0, 10) >= hDate.from) &&
+    (!hDate.to || String(r.savedAt || '').slice(0, 10) <= hDate.to)
   );
 
   const rows = list.map((r, i) => `
@@ -2590,12 +2637,12 @@ function renderHistory() {
       ${isAdmin() ? `<td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>` : ''}
       <td>${i + 1}</td>
       <td class="l">${esc(r.info.과정 || r.courseName)}</td>
-      ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
       <td class="l">${esc(r.info.대학 || '-')}</td>
       <td>${esc(r.info.캠퍼스 || '-')}</td>
       <td>${esc(r.info.계열 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
       <td>${esc(r.info.전공 || '-')}</td>
+      ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
       <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} ${isAdmin() ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
       <td>${esc(r.savedAt)}</td>
       <td><span class="chip ${r.allPass ? 'chip-ok' : 'chip-no'}">${r.allPass ? '적합' : '부적합'}</span></td>
@@ -2654,7 +2701,32 @@ function renderHistory() {
               </select>
             </div>
           </div>
-          ${(historyFilter.univ || historyFilter.campus) ? `<button class="btn btn-ghost btn-sm" onclick="resetHistoryFilter()">필터 초기화</button>` : ''}
+          <div class="field" style="margin:0;min-width:130px">
+            <label>판정</label>
+            <div class="input-wrap">
+              <select onchange="setHistoryFilter('verdict', this.value)">
+                <option value="">전체</option>
+                <option value="pass" ${historyFilter.verdict === 'pass' ? 'selected' : ''}>적합</option>
+                <option value="fail" ${historyFilter.verdict === 'fail' ? 'selected' : ''}>부적합</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin:0">
+            <label>기간(저장일)</label>
+            <div class="input-wrap" style="display:flex;gap:6px;align-items:center">
+              <input type="date" value="${esc(hDate.from)}" max="${esc(hDate.to || '')}" onchange="setHistoryDate('from', this.value)" title="시작일">
+              <span>~</span>
+              <input type="date" value="${esc(hDate.to)}" min="${esc(hDate.from || '')}" onchange="setHistoryDate('to', this.value)" title="종료일">
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('today')">오늘</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('7d')">1주</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('1m')">1개월</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('3m')">3개월</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('all')">전체기간</button>
+          </div>
+          ${(historyFilter.univ || historyFilter.campus || historyFilter.series || historyFilter.verdict || hDate.from || hDate.to) ? `<button class="btn btn-ghost btn-sm" onclick="resetHistoryFilter()">필터 초기화</button>` : ''}
         </div>
         ${isAdmin() ? `
         <div class="toolbar" style="margin-bottom:10px">
@@ -2668,7 +2740,7 @@ function renderHistory() {
         <div class="panel hist-table-wrap">
           <table class="vtable hist-table">
             <thead><tr>
-              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">구분(시간)</th>' : ''}<th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>
+              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">구분(시간)</th>' : ''}
               <th class="col-pathway">과정평가형</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2700,17 +2772,18 @@ function exportHistoryToExcel() {
   const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
   if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
-    ? ['순번', '과정', '구분(시간)', '대학', '캠퍼스', '학과', '직종', '과정평가형', '저장일시', '판정', '충족률', '비고']
-    : ['순번', '과정', '대학', '캠퍼스', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
+    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '구분(시간)', '과정평가형', '저장일시', '판정', '충족률', '비고']
+    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
       i + 1,
       r.info.과정 || r.courseName || '',
-      ...(tabKey === 'vocational' ? [historyTrackLabel(r)] : []),
       r.info.대학 || '',
       r.info.캠퍼스 || '',
+      r.info.계열 || '',
       r.info.학과 || '',
       r.info.전공 || '',
+      ...(tabKey === 'vocational' ? [historyTrackLabel(r)] : []),
       r.pathwayEval ? 'Y' : '',
       r.savedAt || '',
       r.allPass ? '적합' : '부적합',

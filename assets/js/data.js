@@ -28,8 +28,8 @@ const PROGRAM_TREE = {
       { key: 'voc-tech',     name: '전문기술과정',       short: '전문기술' },
       { key: 'voc-hitech',   name: '하이테크과정',       short: '하이테크' },
       { key: 'voc-senior',   name: '중장년특화장기과정', short: '중장년특화장기' },
-      { key: 'voc-trust',    name: '일반계위탁과정',     short: '일반계위탁' },
-      { key: 'voc-master',   name: '기능장과정',         short: '기능장' },
+      // 숨김처리(v1.9.13): { key: 'voc-trust',    name: '일반계위탁과정',     short: '일반계위탁' },
+      // 숨김처리(v1.9.13): { key: 'voc-master',   name: '기능장과정',         short: '기능장' },
     ],
   },
 };
@@ -652,7 +652,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정개편 세부기준 검수 지원 도구',
-  version: '1.9.10',
+  version: '1.9.13',
   developer: '학교법인 한국폴리텍대학 AI혁신부',
 };
 
