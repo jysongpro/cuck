@@ -627,14 +627,13 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
       list.forEach(b => { const d = Math.abs(b.top - p.top); if (d < bestDist) { bestDist = d; best = b; } });
       return { best, bestDist };
     };
-    // 1순위: 이름-only 교과목(다중 능력단위, 4개 미만 합산된 것), 2순위: 자기 값이 있는 교과목(구형 레이아웃)
-    let { best, bestDist } = near(boundaries.filter(b => b.nameOnly && b.units < 4));
-    if (!best || bestDist > 40) {
-      // 이름이 가운데 능력단위 행에 함께 인쇄된 경우(홀수 개 능력단위: 3개 등) — 위·아래 능력단위 행은 약 15~20pt 떨어져 있다.
-      // 교과목당 최대 4개(자기 행 1 + 추가 3) 까지, 세로 30pt 이내에서 가장 가까운 교과목에 합산한다.
-      ({ best, bestDist } = near(boundaries.filter(b => !b.isTotal && !b.nameOnly && b.units < 3)));
-      if (bestDist > 30) best = null;
-    }
+    // v1.9.8 — 이름-only 교과목과 "이름+값" 교과목(홀수 능력단위: 가운데 행에 이름 인쇄)을 동시에 후보로 두고
+    //  세로 거리가 가장 가까운 교과목에 배정한다. (이전: 이름-only 교과목을 40pt 이내면 무조건 우선 → 바로 아래
+    //  3단위 교과목의 첫 능력단위 행을 위 교과목이 가져가는 오류. 예: 이차전지설비운전 ↔ 배터리모듈제작진단)
+    const cands = boundaries.filter(b => !b.isTotal && ((b.nameOnly && b.units < 4 && Math.abs(b.top - p.top) <= 40) ||
+                                                       (!b.nameOnly && b.units < 3 && Math.abs(b.top - p.top) <= 30 &&
+                                                        Number(b.cnt.ncsHours) > 0)));   // 자기 행에 NCS적용시간이 없는 비NCS 교과는 능력단위 행을 갖지 않음
+    let { best } = near(cands);
     if (!best) return;
     best.units++;
     if (p.cnt.ncsHours !== '') best.extraNcs += p.cnt.ncsHours;
@@ -844,4 +843,135 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
   }
 
   return { info, courses, startPage, narrative, summary };
+}
+
+/* v1.9.9 — 중장년특화과정(장기) "바. 교과목 구성" 표 전용 분석기
+ * 열: 구분 | 교과목명 | 시간 | 능력단위 | 편성시간 | NCS적용시간 | 비고 (학기 구분 없음 → 1학기로 처리) */
+function seniorLines(items) {
+  const sorted = items.slice().sort((a, b) => a.top - b.top || a.x - b.x);
+  const lines = [];
+  sorted.forEach(it => {
+    let ln = lines.find(l => Math.abs(l.top - it.top) <= 2.5);
+    if (!ln) { ln = { top: it.top, items: [] }; lines.push(ln); }
+    ln.items.push(it);
+  });
+  lines.forEach(ln => {
+    ln.items.sort((a, b) => a.x - b.x);
+    const words = [];
+    ln.items.forEach(it => {
+      const w = words[words.length - 1];
+      const gap = w ? it.x - w.end : 99;
+      if (w && gap <= 6) { w.str += (gap > 1.5 ? ' ' : '') + it.str; w.end = it.x + (it.width || 0); }
+      else words.push({ str: it.str, x: it.x, end: it.x + (it.width || 0) });
+    });
+    ln.words = words;
+  });
+  return lines.sort((a, b) => a.top - b.top);
+}
+function seniorDetectCols(lines) {
+  let nameX = null, hoursX = null, planX = null, ncsX = null, headerTop = null;
+  lines.forEach(ln => ln.words.forEach(w => {
+    const s = despace(w.str);
+    if (s === '교과목명') {
+      const h = ln.words.find(v => despace(v.str) === '시간' && v.x > w.x);
+      if (h) { nameX = w.x; hoursX = h.x; headerTop = Math.max(headerTop || 0, ln.top); }
+    }
+    if (/^편성/.test(s) && planX == null && w.x > 300) planX = w.x;
+    if (/^NCS/.test(s) && ncsX == null) ncsX = w.x;
+  }));
+  if (nameX == null || planX == null) return null;
+  ncsX = ncsX || planX + 28;
+  const mid = (planX + ncsX) / 2 + 6;
+  return { headerTop, GWAN: [0, nameX - 25], NAME: [nameX - 25, hoursX - 12], HOURS: [hoursX - 12, hoursX + 22],
+           UNIT: [hoursX + 22, planX - 8], PLAN: [planX - 8, mid], NCS: [mid, ncsX + 30] };
+}
+function seniorGroupOf(text, idx) {
+  const s = despace(text);
+  if (/교양/.test(s)) return '교양교과';
+  if (/기초/.test(s)) return '기초기술';
+  if (/계열|직종공통/.test(s)) return '계열공통';
+  if (/특화|전공/.test(s)) return '특화전공';
+  return VOC_GROUP_ORDER[idx] || '';
+}
+async function analyzeVocSenior(file, locationText) {
+  if (!window.pdfjsLib) throw new Error('PDF 라이브러리를 불러오지 못했습니다.');
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf, disableWorker: true }).promise;
+  const locKey = despace(locationText) || '교과목구성';
+  const core = locKey.replace(/^[가-힣]\./, '') || '교과목구성';
+  let info = {};
+  try {
+    let infoLines = [];
+    for (let p = 1; p <= Math.min(2, pdf.numPages); p++) infoLines = infoLines.concat(pageLines(await roadmapPageItems(await pdf.getPage(p))));
+    info = extractDocInfo(infoLines);
+  } catch (e) { info = {}; }
+  let startPage = -1;
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const joined = despace((await roadmapPageItems(await pdf.getPage(p))).map(i => i.str).join(''));
+    if (joined.includes(core)) { startPage = p; break; }
+  }
+  if (startPage < 0) throw new Error(`"${locationText || '바. 교과목 구성'}" 표를 PDF에서 찾지 못했습니다.`);
+  const inCol = (w, c) => w.x >= c[0] && w.x < c[1];
+  const num = (ws) => { const t = ws.map(w => despace(w.str)).join(''); return /^\d+$/.test(t) ? +t : null; };
+  const courses = [], subtotals = [];
+  let total = null, cols = null, gIdx = -1, curGroup = '';
+  for (let p = startPage; p <= Math.min(pdf.numPages, startPage + 3); p++) {
+    let lines = seniorLines(await roadmapPageItems(await pdf.getPage(p)));
+    if (p === startPage) {
+      const a = lines.find(l => despace(l.words.map(w => w.str).join('')).includes(core));
+      if (a) lines = lines.filter(l => l.top >= a.top);
+    }
+    const det = seniorDetectCols(lines);
+    if (det) { cols = det; lines = lines.filter(l => l.top > det.headerTop + 2); }
+    if (!cols) continue;
+    const anchors = [];
+    lines.forEach(ln => {
+      const nameTxt = despace(ln.words.filter(w => inCol(w, cols.NAME) || inCol(w, cols.GWAN) || inCol(w, cols.HOURS)).map(w => w.str).join(''));
+      const planV = num(ln.words.filter(w => inCol(w, cols.PLAN)));
+      const ncsV = num(ln.words.filter(w => inCol(w, cols.NCS)));
+      if (/총계$/.test(nameTxt) && planV != null) { anchors.push({ type: 'total', top: ln.top, plan: planV, ncs: ncsV }); return; }
+      if (/소계$/.test(nameTxt) && planV != null) { anchors.push({ type: 'sub', top: ln.top, plan: planV, ncs: ncsV }); return; }
+      const nm = ln.words.filter(w => inCol(w, cols.NAME)).map(w => w.str).join(' ').replace(/\s+/g, ' ').trim();
+      const hrs = num(ln.words.filter(w => inCol(w, cols.HOURS)));
+      if (nm && hrs != null && /[가-힣A-Za-z]/.test(nm)) anchors.push({ type: 'course', top: ln.top, name: nm, hours: hrs });
+    });
+    if (p > startPage && !anchors.length) break;
+    const gwanTexts = [];
+    lines.forEach(ln => ln.words.filter(w => inCol(w, cols.GWAN)).forEach(w => gwanTexts.push({ top: ln.top, str: w.str })));
+    anchors.forEach((a, i) => {
+      if (a.type === 'total') { total = { hours: a.plan, ncsHours: a.ncs || 0 }; return; }
+      if (a.type === 'sub') {
+        gIdx++;
+        const next = anchors.slice(i + 1).find(x => x.type !== 'course');
+        const txt = gwanTexts.filter(g => g.top > a.top + 1 && (!next || g.top < next.top)).map(g => g.str).join('');
+        curGroup = seniorGroupOf(txt, gIdx);
+        subtotals.push({ label: curGroup, total: a.plan, ncsHours: a.ncs || 0 });
+        return;
+      }
+      const prevTop = i > 0 ? anchors[i - 1].top : a.top - 8;
+      const nextTop = i < anchors.length - 1 ? anchors[i + 1].top : a.top + 30;
+      const lo = i > 0 && anchors[i - 1].type === 'course' ? (prevTop + a.top) / 2 : prevTop + 2;
+      const hi = i < anchors.length - 1 && anchors[i + 1].type === 'course' ? (a.top + nextTop) / 2 : nextTop - 2;
+      const band = lines.filter(l => l.top >= lo - 0.1 && l.top < hi);
+      let ncs = 0; const units = [];
+      band.forEach(l => {
+        const v = num(l.words.filter(w => inCol(w, cols.NCS)));
+        if (v != null) ncs += v;
+        const u = despace(l.words.filter(w => inCol(w, cols.UNIT)).map(w => w.str).join(''));
+        const m = u.match(/\d{10}_\d{2}v\d+/g); if (m) units.push(...m);
+      });
+      courses.push({ name: a.name, gwan: curGroup, semester: '1', credit: a.hours, semTotal: a.hours, ncsHours: ncs, units });
+    });
+    if (total && subtotals.length >= 4 && subtotals.reduce((s, g) => s + (g.total || 0), 0) === total.hours) break;
+  }
+  if (!courses.length) throw new Error('표는 찾았지만 교과목을 읽지 못했습니다. PDF 표 레이아웃을 확인해 주세요.');
+  const groups = VOC_GROUP_ORDER.map(label => {
+    const s = subtotals.find(g => g.label === label);
+    const own = courses.filter(c => c.gwan === label);
+    const hours = s ? s.total : own.reduce((a, c) => a + c.semTotal, 0);
+    return { label, hours, ncsHours: s ? s.ncsHours : own.reduce((a, c) => a + c.ncsHours, 0), sem1: hours, sem2: 0, sem3: 0 };
+  });
+  const tHours = total ? total.hours : groups.reduce((s, g) => s + g.hours, 0);
+  const tNcs = total ? total.ncsHours : groups.reduce((s, g) => s + (+g.ncsHours || 0), 0);
+  return { info, courses, startPage, narrative: {}, summary: { groups, total: tHours, totalInfo: { hours: tHours, ncsHours: tNcs, sem1: tHours, sem2: 0, sem3: 0 } } };
 }

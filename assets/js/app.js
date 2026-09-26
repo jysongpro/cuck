@@ -158,7 +158,7 @@ const LIBERAL_GROUPS = [
 ];
 // 하이테크과정(voc-hitech)은 교양교과/산업안전교과/산업AI교과/AI활용교과 목록을 전문기술과정(voc-tech)과 "동일하게" 공유한다.
 // 저장/조회 시 courseKey를 voc-tech로 정규화해 두 과정이 같은 데이터를 참조하도록 한다.
-function vocAliasKey(courseKey) { return courseKey === 'voc-hitech' ? 'voc-tech' : courseKey; }
+function vocAliasKey(courseKey) { return (courseKey === 'voc-hitech' || courseKey === 'voc-senior') ? 'voc-tech' : courseKey; }
 const LiberalArtsStore = {
   all() { try { return JSON.parse(localStorage.getItem(LIBERAL_KEY)) || {}; } catch { return {}; } },
   get(courseKey) {
@@ -218,6 +218,11 @@ const SIMPLE_RULE_COURSE_DEFAULTS = {
     safety:       { checkMinOne: true, minCount: 1, minTotalHours: 16, allowedSemesters: '2' },
     industrialAi: { checkMinOne: true, minCount: 1, minTotalHours: 20, allowedSemesters: '' },
     aiApplied:    { checkMinOne: true, minCount: 1, minTotalHours: 20, allowedSemesters: '' },
+  },
+  'voc-senior': {
+    safety:       { checkMinOne: true,  minCount: 1, minTotalHours: 10, allowedSemesters: '' },
+    industrialAi: { checkMinOne: false, minCount: 0, minTotalHours: 0,  allowedSemesters: '' },
+    aiApplied:    { checkMinOne: true,  minCount: 1, minTotalHours: 20, allowedSemesters: '' },
   },
 };
 /* 이 앱이 사용하는 모든 localStorage 키 — 내보내기/가져오기(백업·복원) 대상 */
@@ -1487,7 +1492,8 @@ function emptyRow() { return { name: '', gwan: '전공', semester: '', category:
 /* ---------- 교육운영계획서(PDF) 로드맵 분석 ---------------------------- */
 let selectedPdf = null;
 let lastDocInfo = {};   // 마지막 분석한 교육운영계획서 정보(저장 파일명·헤더용)
-const VOC_TIME_KEYS = ['voc-tech', 'voc-hitech']; // 시간(hours) 기준 세부기준 체계를 쓰는 직업교육과정(전문기술/하이테크)
+const AI_APPLIED_POOL_2027 = ['AI리터러시','멀티모달AI','생성형AI','바이브코딩','AI활용','데이터분석및시각화','AI코딩','AI에이전트','피지컬AI이해'];
+const VOC_TIME_KEYS = ['voc-tech', 'voc-hitech', 'voc-senior']; // 시간(hours) 기준 세부기준 체계를 쓰는 직업교육과정(전문기술/하이테크)
 function isVocTimeBased(courseKey) { return VOC_TIME_KEYS.includes(courseKey); }
 let lastNarrative = {}; // 마지막 분석 시 추출된 서술형 본문·표 기반 산업AI교과 목록
 let lastVocSummary = null; // 마지막 전문기술과정 PDF 분석 시 산출된 소계/총계(res.summary) — 시간기준 검수에 그대로 사용
@@ -1530,7 +1536,9 @@ async function runRoadmapAnalyze(courseKey) {
   try {
     if (isVocTimeBased(courseKey)) {
       const trackKey = (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '';
-      const res = await analyzeVocTech(selectedPdf, loc, aiPages, courseKey, trackKey);
+      const res = courseKey === 'voc-senior'
+        ? await analyzeVocSenior(selectedPdf, loc)
+        : await analyzeVocTech(selectedPdf, loc, aiPages, courseKey, trackKey);
       msg.innerHTML = '';
       lastDocInfo = res.info || {};
       lastNarrative = res.narrative || {};
@@ -1538,7 +1546,7 @@ async function runRoadmapAnalyze(courseKey) {
       curriculumRows = res.courses.map(c => ({
         name: c.name, gwan: c.gwan, semester: c.semester, category: '',
         credit: c.credit, theory: '', practice: '',
-        ncsHours: c.ncsHours, semTotal: c.semTotal,
+        ncsHours: c.ncsHours, semTotal: c.semTotal, units: c.units || [],
       }));
       refreshRows();
       renderVocTechResult(courseKey, res);
@@ -1892,6 +1900,70 @@ function runVocTechCheck(courseKey) {
 
   const checks = [];
   const add = (ok, title, val, req, detail = '') => checks.push({ ok, title, val, req, detail });
+
+  // v1.9.9 — 중장년특화장기과정(voc-senior) 전용 검수 (2027 세부기준, 학기 구분 없음 · PDF "바. 교과목 구성" 소계/총계 기준)
+  if (courseKey === 'voc-senior') {
+    const lo = std.totalHoursMin || 480, hi = std.totalHoursMax || 576;
+    if (cl.c_totalRange) add(totalHours >= lo && totalHours <= hi, '총 편성시간', totalHours + 'h', `${lo}~${hi}h`,
+        (totalHours >= lo && totalHours <= hi) ? '' : `총 편성시간 ${totalHours}h가 기준 범위를 벗어났습니다.`);
+    if (cl.c_ratio) {
+      const pLo = std.practiceRatio - std.ratioTolerance, pHi = std.practiceRatio + std.ratioTolerance;
+      const ok = practiceRatioCalc >= pLo && practiceRatioCalc <= pHi;
+      add(ok, '이론:실습 비율', `이론 ${theoryRatioCalc}% : 실습 ${practiceRatioCalc}% (이론${theoryHours}h/실습${practiceHours}h)`,
+          `실습 ${pLo}~${pHi}% (이론=교양교과+기초기술, 실습=계열공통+특화전공)`, ok ? '' : '실습 비율이 기준 범위를 벗어났습니다.');
+    }
+    if (cl.c_courseMax) add(overMaxCourses.length === 0, '과목당 편성시간(NCS 제외)', overMaxCourses.length + '개 과목 초과', `≤ ${std.courseHoursMax}h`,
+        overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
+    const unitsOf = (c) => (curriculumRows.find(r => (r.name || '').trim() === c.name) || {}).units || [];
+    if (cl.c_ncsPerCourse) {
+      const max = std.ncsPerCourseMax || 4;
+      const bad = courses.filter(c => unitsOf(c).length > max);
+      add(!bad.length, '교과당 NCS 능력단위 수', bad.length ? bad.map(c => `${c.name}(${unitsOf(c).length}개)`).join(', ') : '모두 기준 이내', `≤ ${max}개`,
+          bad.length ? '능력단위가 기준 개수를 초과한 교과가 있습니다.' : '');
+    }
+    if (cl.c_ncsDup) {
+      const seenU = {}, dup = [];
+      courses.forEach(c => unitsOf(c).forEach(u => { if (seenU[u] && seenU[u] !== c.name) dup.push(`${u}(${seenU[u]}·${c.name})`); else seenU[u] = c.name; }));
+      add(!dup.length, 'NCS 능력단위 중복 편성', dup.length ? dup.join(', ') : '중복 없음', '중복 편성 불가', dup.length ? '동일 능력단위가 2개 이상 교과에 편성되었습니다.' : '');
+    }
+    if (cl.c_seniorLiberal) {
+      const re = courses.find(c => norm(c.name).includes('재취업컨설팅'));
+      const ok = !!re && re.semTotal >= (std.liberalHours || 20) && re.gwan === '교양교과';
+      add(ok, '교양교과「재취업컨설팅」', re ? `${re.semTotal}h (${re.gwan || '구분 미확인'})` : '미편성',
+          `교양교과 ≥ ${std.liberalHours}h (필수 교수요목: 사회적경제기업 2h, 양성평등및성인지 2h)`,
+          !re ? '「재취업컨설팅」 교과를 찾지 못했습니다.' : (re.gwan !== '교양교과' ? '교양교과에 편성되어야 합니다.' : (ok ? '' : '편성시간이 기준에 미달합니다.')));
+    }
+    if (cl.c_seriesCommon) {
+      const ok = seriesCommonRatio >= std.seriesCommonRatioMin && seriesCommonRatio <= std.seriesCommonRatioMax;
+      add(ok, '계열공통교과 비율', `${seriesCommonRatio}% (${seriesCommonHours}h/총 ${totalHours}h)`, `${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
+          ok ? '' : '계열공통교과 비율이 기준 범위를 벗어났습니다.');
+    }
+    if (cl.c_seniorSafety) {
+      const safetyNames = SimpleListStore.get('safety', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+      const sc = courses.filter(c => safetyNames.some(n => norm(c.name).includes(norm(n))) || /산업\s*안전/.test(c.name));
+      const sum = sc.reduce((a, c) => a + c.semTotal, 0);
+      const badGroup = sc.filter(c => !['기초기술', '특화전공'].includes(c.gwan));
+      const need = std.safetyHours || 10;
+      add(sc.length > 0 && sum >= need && !badGroup.length, '산업안전교과 편성',
+          sc.length ? `${sum}h (${sc.map(c => `${c.name}/${c.gwan}`).join(', ')})` : '미편성', `≥ ${need}h, 기초기술 또는 특화전공`,
+          !sc.length ? '산업안전 교과를 찾지 못했습니다.' : (badGroup.length ? '기초기술/특화전공 외 구분에 편성되었습니다.' : (sum < need ? '편성시간이 기준에 미달합니다.' : '')));
+    }
+    if (cl.c_aiApplied) {
+      const pool = aiAppliedNames.length ? aiAppliedNames : AI_APPLIED_POOL_2027;
+      const ai = courses.filter(c => pool.some(n => norm(c.name).includes(norm(n)))).sort((a, b) => b.semTotal - a.semTotal);
+      const best = ai[0], need = std.aiAppliedHours || 20;
+      const ok = !!best && best.semTotal >= need && best.gwan === '특화전공';
+      add(ok, 'AI활용교과 편성', best ? ai.map(c => `${c.name} ${c.semTotal}h(${c.gwan})`).join(', ') : '미편성',
+          `AI활용 Pool 9개 중 1개 이상, ≥ ${need}h, 특화전공`,
+          !best ? 'AI활용 Pool 교과를 찾지 못했습니다.' : (best.gwan !== '특화전공' ? '특화전공교과에 편성해야 합니다.' : (best.semTotal < need ? '편성시간이 기준에 미달합니다.' : '')));
+    }
+    if (cl.c_industrialAi) add(!!industrialAiCourse, '산업AI교과 편성(선택)',
+        industrialAiCourse ? `편성됨 (${industrialAiCourse.name}, ${industrialAiCourse.semTotal}h)` : '미편성', '특화전공 자율 편성',
+        industrialAiCourse ? '' : '산업AI교과 설정 목록과 일치하는 교과가 없습니다.');
+    vocCourseRuleChecks(courseKey, rows, courses).forEach(c => add(c.ok, c.title, c.val, c.req, c.detail));
+    renderCheckResult(courseKey, checks);
+    return;
+  }
 
   if (cl.c_totalHours) add(totalHours === std.totalHours, '총 편성시간', totalHours + 'h', std.totalHours + 'h',
       totalHours !== std.totalHours ? `실제 편성 ${totalHours}h (기준 ${std.totalHours}h)` : '');

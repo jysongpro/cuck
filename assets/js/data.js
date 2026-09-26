@@ -477,6 +477,45 @@ const COURSE_SPECS = {
   },
 
 
+  'voc-senior': {
+    sourceLabel: '중장년특화과정(장기)(직업교육과정·시간 기반)',
+    sourceDoc: '2027학년도 직업교육과정(중장년특화(장기)) 교과과정개편 세부기준 (2026.08.)',
+    checkTitle: '중장년특화장기과정 교과과정 검수',
+    standardGroups: [
+      { title: '운영 총시간 기준', fields: [
+        { key: 'totalHoursMin', label: '총 운영시간(최소)', unit: '시간', def: 480, note: '6개월 과정' },
+        { key: 'totalHoursMax', label: '총 운영시간(최대)', unit: '시간', def: 576 },
+        { key: 'practiceRatio', label: '실습 비율(기준)', unit: '%', def: 80, note: '이론=교양+기초기술, 실습=계열공통+특화전공 (이론 20% : 실습 80%)' },
+        { key: 'ratioTolerance', label: '비율 허용오차(±)', unit: '%p', def: 10 },
+        { key: 'etcHoursMax', label: '기타 재량활동시간(이내, 참고)', unit: '시간', def: 20, note: '입학식·OT·수료식 등, 교과목 시수 미인정' },
+      ]},
+      { title: '교과목 기준', fields: [
+        { key: 'courseHoursMax', label: '과목당 편성시간(이내)', unit: '시간', def: 120, note: 'NCS 교과 제외' },
+        { key: 'ncsPerCourseMax', label: '교과당 NCS 능력단위(이내)', unit: '개', def: 4 },
+      ]},
+      { title: '교양·계열공통 교과', fields: [
+        { key: 'liberalHours', label: '「재취업컨설팅」 편성시간(이상)', unit: '시간', def: 20, note: '필수 교수요목: 사회적경제기업 2h, 양성평등및성인지 2h' },
+        { key: 'seriesCommonRatioMin', label: '계열공통교과 비율(최소)', unit: '%', def: 10, note: '전체 교육시간 대비' },
+        { key: 'seriesCommonRatioMax', label: '계열공통교과 비율(최대)', unit: '%', def: 20 },
+      ]},
+      { title: '필수 편성 교과(시간)', fields: [
+        { key: 'safetyHours', label: '산업안전교과 편성시간(이상)', unit: '시간', def: 10, note: '기초기술(이론) 또는 특화전공(실습)에 1과목, 법정 온라인 6h 포함 가능' },
+        { key: 'aiAppliedHours', label: 'AI활용교과 편성시간(이상)', unit: '시간', def: 20, note: '2027 AI활용 Pool 9개 교과 중 1개 이상, 특화전공에 편성' },
+      ]},
+    ],
+    checklist: [
+      { key: 'c_totalRange',    label: '총 운영시간 480~576시간 충족',                    ref: '480~576h',   def: true },
+      { key: 'c_ratio',         label: '이론:실습 = 20:80(±10%p) 충족',                  ref: '실습 70~90%', def: true },
+      { key: 'c_courseMax',     label: '과목당 120시간 이내 편성(NCS 교과 제외)',         ref: '≤ 120h',     def: true },
+      { key: 'c_ncsPerCourse',  label: '교과당 NCS 능력단위 4개 이내',                     ref: '≤ 4개',      def: true },
+      { key: 'c_ncsDup',        label: 'NCS 능력단위 중복 편성 불가',                      ref: '중복 없음',  def: true },
+      { key: 'c_seniorLiberal', label: '교양교과「재취업컨설팅」20시간 필수 편성',        ref: '20h',        def: true },
+      { key: 'c_seriesCommon',  label: '계열공통교과 전체 교육시간의 10~20% 편성',        ref: '10~20%',     def: true },
+      { key: 'c_seniorSafety',  label: '산업안전교과 10시간(기초기술 또는 특화전공) 필수', ref: '≥ 10h',      def: true },
+      { key: 'c_aiApplied',     label: 'AI활용 Pool 1개 이상 20시간, 특화전공 편성',       ref: '≥ 20h',      def: true },
+      { key: 'c_industrialAi',  label: '산업AI교과 편성(선택, 특화전공 자율)',             ref: '자율',       def: false },
+    ],
+  },
   'degree-advanced': {
     sourceLabel: '학위전공심화과정(4학년)',
     sourceDoc: '2027학년도 학위전공심화과정 교과과정개편 세부기준 v6 (2026.8)',
@@ -613,7 +652,7 @@ const SAMPLE_CURRICULUM = [
 /* 메타 정보 -------------------------------------------------------------- */
 const APP_META = {
   name: '한국폴리텍대학 교과과정개편 세부기준 검수 지원 도구',
-  version: '1.9.7',
+  version: '1.9.9',
   developer: '학교법인 한국폴리텍대학 AI혁신부',
 };
 
