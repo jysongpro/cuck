@@ -502,60 +502,42 @@ function renderHome() {
             <span class="badge">● AI 기반 교과편성 검수 시스템</span>
             <h1 class="home-title">${esc(APP_META.name).replace('교과과정개편 세부기준 검수 지원 도구', '교과과정개편<br><span class="accent">세부기준</span> 검수 지원 도구')}</h1>
 
-            <p class="home-sub">2027학년도 운영과정별 교과편성 기준을 설정하고, 실제 커리큘럼이 기준에 부합하는지
+            <p class="home-sub">2027학년도 교육과정별 교과편성 기준을 설정하고, 실제 커리큘럼이 기준에 부합하는지
               자동으로 검수합니다.</p>
 
             <div class="menu-cards">
-              <button class="menu-card" onclick="navigate('cat/degree')">
-                <span class="num">1</span>
-                <div class="icon-wrap">${ICON.cap}</div>
-                <h3>학위과정</h3>
-                <p>학위·학위전공심화 과정의<br>교과편성 기준 검수</p>
-                <div class="tags"><span>학위과정</span><span>학위전공심화과정</span></div>
-              </button>
-              <button class="menu-card" onclick="navigate('cat/vocational')">
-                <span class="num">2</span>
-                <div class="icon-wrap">${ICON.tools}</div>
-                <h3>직업교육과정</h3>
-                <p>전문기술·하이테크·중장년특화장기<br>과정 기준 검수</p>
-                <div class="tags"><span>전문기술</span><span>하이테크</span><span>중장년특화장기</span></div>
-              </button>
+              <div class="menu-col">
+                <button class="menu-card" onclick="navigate('cat/degree')">
+                  <span class="num">1</span>
+                  <div class="icon-wrap">${ICON.cap}</div>
+                  <h3>학위과정</h3>
+                  <p>학위·학위전공심화 과정의<br>교과편성 기준 검수</p>
+                  <div class="tags"><span>학위과정</span><span>학위전공심화과정</span></div>
+                </button>
+                <div class="quick-links">
+                  <button class="btn-quick" onclick="navigate('cat/degree/check/degree-regular')">${ICON.check} 학위과정 체크하기</button>
+                  <button class="btn-quick" onclick="navigate('cat/degree/check/degree-advanced')">${ICON.check} 학위전공심화과정 체크하기</button>
+                </div>
+              </div>
+              <div class="menu-col">
+                <button class="menu-card" onclick="navigate('cat/vocational')">
+                  <span class="num">2</span>
+                  <div class="icon-wrap">${ICON.tools}</div>
+                  <h3>직업교육과정</h3>
+                  <p>전문기술·하이테크·중장년특화장기<br>과정 기준 검수</p>
+                  <div class="tags tags-oneline"><span>전문기술</span><span>하이테크</span><span>중장년특화장기</span></div>
+                </button>
+                <div class="quick-links">
+                  <button class="btn-quick" onclick="navigate('cat/vocational/check/voc-tech')">${ICON.check} 전문기술과정 체크하기</button>
+                  <button class="btn-quick" onclick="navigate('cat/vocational/check/voc-hitech')">${ICON.check} 하이테크과정 체크하기</button>
+                  <button class="btn-quick" onclick="navigate('cat/vocational/check/voc-senior')">${ICON.check} 중장년특화장기과정 체크하기</button>
+                </div>
+              </div>
             </div>
+            <p class="home-notice">※ 직업교육과정의 일반계고위탁과정과 기능장과정의 검수는 지원하지 않습니다. 담당자와 상의하시기 바랍니다.</p>
           </div>
           <div class="home-art">${HERO_ART}</div>
         </div>
-      </div>
-      <div class="quick-links" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:24px 0 8px;">
-        <button class="btn btn-quick" onclick="navigate('cat/degree/check/degree-regular')"
-                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
-                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
-                       color:#fff;font-weight:600;cursor:pointer;">
-          ${ICON.check} 학위과정 체크하기
-        </button>
-        <button class="btn btn-quick" onclick="navigate('cat/degree/check/degree-advanced')"
-                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
-                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
-                       color:#fff;font-weight:600;cursor:pointer;">
-          ${ICON.check} 학위전공심화과정 체크하기
-        </button>
-        <button class="btn btn-quick" onclick="navigate('cat/vocational/check/voc-tech')"
-                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
-                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
-                       color:#fff;font-weight:600;cursor:pointer;">
-          ${ICON.check} 전문기술과정 체크하기
-        </button>
-        <button class="btn btn-quick" onclick="navigate('cat/vocational/check/voc-hitech')"
-                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
-                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
-                       color:#fff;font-weight:600;cursor:pointer;">
-          ${ICON.check} 하이테크과정 체크하기
-        </button>
-        <button class="btn btn-quick" onclick="navigate('cat/vocational/check/voc-senior')"
-                style="display:inline-flex;align-items:center;gap:6px;padding:10px 16px;border-radius:10px;
-                       border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);
-                       color:#fff;font-weight:600;cursor:pointer;">
-          ${ICON.check} 중장년특화장기과정 체크하기
-        </button>
       </div>
       <div class="home-footer">
         <div class="prog-info">
