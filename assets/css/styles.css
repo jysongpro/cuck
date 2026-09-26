@@ -708,3 +708,10 @@ a { color: inherit; text-decoration: none; }
 .menu-cards{max-width:600px}
 .menu-card .tags.tags-oneline{gap:4px;margin-left:-8px;margin-right:-8px}
 .menu-card .tags.tags-oneline span{font-size:10.5px;padding:3px 7px;letter-spacing:-.2px}
+/* v1.9.16 — 두 메뉴 카드의 글자·그림 배열 통일 (설명 한 줄, 동일 높이·동일 위치) */
+.menu-col .menu-card{display:flex;flex-direction:column;align-items:center;padding:26px 14px 22px}
+.menu-card p.desc-oneline{white-space:nowrap;font-size:11.5px;letter-spacing:-.3px;min-height:0;line-height:1.5;height:18px}
+.menu-card .tags.tags-oneline{margin-top:14px;min-height:24px;align-items:center;justify-content:center}
+.menu-cards{align-items:start}
+.home-notice .notice-em{color:#ffd166;font-weight:700;text-decoration:underline;text-underline-offset:3px}
+.menu-card p.desc-oneline{font-size:11px;letter-spacing:-.4px}

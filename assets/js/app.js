@@ -511,8 +511,8 @@ function renderHome() {
                   <span class="num">1</span>
                   <div class="icon-wrap">${ICON.cap}</div>
                   <h3>학위과정</h3>
-                  <p>학위·학위전공심화 과정의<br>교과편성 기준 검수</p>
-                  <div class="tags"><span>학위과정</span><span>학위전공심화과정</span></div>
+                  <p class="desc-oneline">학위·학위전공심화과정 교과과정개편 기준 검수</p>
+                  <div class="tags tags-oneline"><span>학위과정</span><span>학위전공심화과정</span></div>
                 </button>
                 <div class="quick-links">
                   <button class="btn-quick" onclick="navigate('cat/degree/check/degree-regular')">${ICON.check} 학위과정 체크하기</button>
@@ -524,7 +524,7 @@ function renderHome() {
                   <span class="num">2</span>
                   <div class="icon-wrap">${ICON.tools}</div>
                   <h3>직업교육과정</h3>
-                  <p>전문기술·하이테크·중장년특화장기<br>과정 기준 검수</p>
+                  <p class="desc-oneline">전문기술·하이테크·중장년특화장기과정 교과과정개편 기준 검수</p>
                   <div class="tags tags-oneline"><span>전문기술</span><span>하이테크</span><span>중장년특화장기</span></div>
                 </button>
                 <div class="quick-links">
@@ -534,7 +534,7 @@ function renderHome() {
                 </div>
               </div>
             </div>
-            <p class="home-notice">※ 직업교육과정의 일반계고위탁과정과 기능장과정의 검수는 지원하지 않습니다. 담당자와 상의하시기 바랍니다.</p>
+            <p class="home-notice">※ 직업교육과정의 <strong class="notice-em">일반계고위탁과정</strong>과 <strong class="notice-em">기능장과정</strong>의 검수는 지원하지 않습니다. 담당자와 상의하시기 바랍니다.</p>
           </div>
           <div class="home-art">${HERO_ART}</div>
         </div>
