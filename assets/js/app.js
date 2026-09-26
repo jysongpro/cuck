@@ -802,7 +802,21 @@ function buildCriteriaList(courseKey) {
   const add = (title, req) => items.push({ title, req, src: '세부기준' });
 
   const rawSpec0 = COURSE_SPECS[courseKey];
-  if (rawSpec0 && rawSpec0.durationTracks) {
+  if (courseKey === 'voc-senior') {
+    // ── 중장년특화장기과정 — 시간 기반, 학기 구분 없음 (2027 세부기준) ──
+    const { standards: s, checklist: cl } = Store.getSpec(courseKey);
+    const pLo = s.practiceRatio - s.ratioTolerance, pHi = s.practiceRatio + s.ratioTolerance;
+    if (cl.c_totalRange)    add('총 운영시간', `${s.totalHoursMin}~${s.totalHoursMax}시간 (6개월, 기타 재량활동 ${s.etcHoursMax}시간 미포함)`);
+    if (cl.c_ratio)         add('이론:실습 비율', `이론 ${100 - s.practiceRatio}% : 실습 ${s.practiceRatio}% (±${s.ratioTolerance}%p → 실습 ${pLo}~${pHi}%)`);
+    if (cl.c_courseMax)     add('과목당 편성시간', `${s.courseHoursMax}시간 이내 (NCS 교과 제외)`);
+    if (cl.c_ncsPerCourse)  add('교과당 NCS 능력단위 수', `${s.ncsPerCourseMax}개 이내`);
+    if (cl.c_ncsDup)        add('NCS 능력단위 중복 편성', '중복 편성 불가');
+    if (cl.c_seniorLiberal) add('교양교과「재취업컨설팅」', `교양교과 ${s.liberalHours}시간 이상 필수 (사회적경제기업 2h·양성평등및성인지 2h 포함)`);
+    if (cl.c_seriesCommon)  add('계열공통교과 비율', `전체 교육시간의 ${s.seriesCommonRatioMin}~${s.seriesCommonRatioMax}%`);
+    if (cl.c_seniorSafety)  add('산업안전교과 편성시간', `${s.safetyHours}시간 이상 (기초기술 또는 특화전공)`);
+    if (cl.c_aiApplied)     add('AI활용교과 편성시간', `AI활용 Pool 1개 이상 · ${s.aiAppliedHours}시간 이상 (특화전공)`);
+    if (cl.c_industrialAi)  add('산업AI교과 편성', '선택 (특화전공 자율 편성)');
+  } else if (rawSpec0 && rawSpec0.durationTracks) {
     // ── 시간총량 기반 과정(전문기술과정 등) — 학위과정(학점 기반)과 별개 체크리스트 ──
     const s = Store.getSpec(courseKey).standards;
     const trackLabel = (rawSpec0.durationTracks[VocTrackStore.get(courseKey)] || {}).trackLabel || '';
@@ -870,6 +884,7 @@ function buildCriteriaList(courseKey) {
 
   // 산업안전·산업AI·AI활용 교과편성 확인 — 등록된 경우에만 미리보기에 노출
   Object.keys(SIMPLE_LIST_TYPES).forEach(type => {
+    if (courseKey === 'voc-senior') return;   // 중장년: 산업안전·AI활용·산업AI는 위 세부기준 항목(시간 기준)에서 통합 검수
     if (!SimpleListStore.isSet(type, courseKey)) return;
     const meta = SIMPLE_LIST_TYPES[type];
     const rule = SimpleRuleStore.get(type, courseKey);
@@ -1431,7 +1446,7 @@ function renderCheck(courseKey) {
             <div class="field" style="flex:1;margin:0">
               <label>분석할 파일 내 위치</label>
               <div class="input-wrap">
-                <input type="text" id="pdfLoc" value="${isVocTimeBased(courseKey) ? '마.교과목구성' : '8.교육훈련과정로드맵'}" placeholder="예: 8.교육훈련과정로드맵">
+                <input type="text" id="pdfLoc" value="${courseKey === 'voc-senior' ? '바.교과목구성' : (isVocTimeBased(courseKey) ? '마.교과목구성' : '8.교육훈련과정로드맵')}" placeholder="예: 8.교육훈련과정로드맵">
               </div>
             </div>
             <div class="field" style="flex:0 0 220px;margin:0">
