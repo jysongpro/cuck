@@ -1436,7 +1436,7 @@ function renderCheck(courseKey) {
           <span class="desc">PDF 로드맵을 분석해 교양/전공·필수/선택을 자동 추출</span>
         </div>
         <div class="panel-body">
-          <label class="dropzone" ondragover="event.preventDefault()" ondrop="onPdfDrop(event)">
+          <label class="dropzone" id="pdfDropzone" ondragenter="onPdfDragOver(event)" ondragover="onPdfDragOver(event)" ondragleave="onPdfDragLeave(event)" ondrop="onPdfDrop(event)">
             <div style="color:var(--c-blue-600)">${ICON.upload}</div>
             <div><b id="pdfName">교육운영계획서(PDF) 선택</b> 또는 이곳에 파일을 끌어다 놓기</div>
             <small>예: 학위과정 교육운영계획서.pdf</small>
@@ -1514,9 +1514,54 @@ let lastNarrative = {}; // 마지막 분석 시 추출된 서술형 본문·표 
 let lastVocSummary = null; // 마지막 전문기술과정 PDF 분석 시 산출된 소계/총계(res.summary) — 시간기준 검수에 그대로 사용
 let lastCheck = null;   // 마지막 검수 결과(저장용)
 function onPdfPick(ev) { const f = ev.target.files[0]; if (f) setPdf(f); }
-function onPdfDrop(ev) { ev.preventDefault(); const f = ev.dataTransfer.files && ev.dataTransfer.files[0]; if (f) setPdf(f); }
+/* v1.9.20 — PDF 드래그&드롭 개선: 드롭존을 조금 벗어나 놓아도 브라우저가 새 탭으로 PDF를 열지 않도록
+ * 문서 전체에서 파일 드래그의 기본 동작을 막고, 교과과정 체크 화면에서는 어디에 놓아도 업로드로 처리 */
+function isFileDrag(ev) {
+  const dt = ev.dataTransfer; if (!dt) return false;
+  return Array.from(dt.types || []).includes('Files');
+}
+function onPdfDragOver(ev) {
+  ev.preventDefault(); ev.stopPropagation();
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy';
+  const dz = document.getElementById('pdfDropzone'); if (dz) dz.classList.add('dragover');
+}
+function onPdfDragLeave(ev) {
+  const dz = document.getElementById('pdfDropzone');
+  if (dz && (!ev.relatedTarget || !dz.contains(ev.relatedTarget))) dz.classList.remove('dragover');
+}
+function onPdfDrop(ev) {
+  ev.preventDefault(); ev.stopPropagation();
+  const dz = document.getElementById('pdfDropzone'); if (dz) dz.classList.remove('dragover');
+  const files = Array.from((ev.dataTransfer && ev.dataTransfer.files) || []);
+  if (!files.length) { toast('파일을 인식하지 못했습니다. 다시 끌어다 놓거나 클릭하여 선택하세요.'); return; }
+  const f = files.find(x => /\.pdf$/i.test(x.name) || x.type === 'application/pdf') || files[0];
+  if (files.length > 1) toast('여러 파일 중 첫 번째 PDF만 사용합니다.');
+  setPdf(f);
+}
+(function installGlobalDropGuard() {
+  if (window.__pdfDropGuard) return; window.__pdfDropGuard = true;
+  ['dragenter', 'dragover'].forEach(t => window.addEventListener(t, (ev) => {
+    if (!isFileDrag(ev)) return;
+    ev.preventDefault();
+    const dz = document.getElementById('pdfDropzone');
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = dz ? 'copy' : 'none';
+    if (dz) dz.classList.add('dragover');
+  }, true));
+  window.addEventListener('dragleave', (ev) => {
+    if (ev.clientX <= 0 || ev.clientY <= 0 || ev.clientX >= innerWidth || ev.clientY >= innerHeight) {
+      const dz = document.getElementById('pdfDropzone'); if (dz) dz.classList.remove('dragover');
+    }
+  });
+  window.addEventListener('drop', (ev) => {
+    if (!isFileDrag(ev)) return;
+    ev.preventDefault();                       // 새 탭에서 PDF가 열리는 기본 동작 차단
+    const dz = document.getElementById('pdfDropzone');
+    if (dz) { if (!dz.contains(ev.target)) onPdfDrop(ev); }   // 체크 화면: 드롭존 밖에 놓아도 업로드
+    else toast('PDF 업로드는 교과과정 체크하기 화면에서 가능합니다.');
+  });
+})();
 function setPdf(f) {
-  if (!/\.pdf$/i.test(f.name)) { toast('PDF 파일을 선택하세요.'); return; }
+  if (!f || !(/\.pdf$/i.test(f.name) || f.type === 'application/pdf')) { toast('PDF 파일을 선택하세요.'); return; }
   selectedPdf = f;
   const nm = $('#pdfName'); if (nm) nm.textContent = f.name;
   const btn = $('#analyzeBtn'); if (btn) btn.disabled = false;
@@ -2519,6 +2564,7 @@ function saveCheckResultToHistory(courseKey) {
     pathwayEval: (courseKey === 'voc-hitech' && lastVocPathway) ? true : false,   // 과정평가형 여부(체크박스, 검수내역 화면에서 직접 설정)
     remark: '',           // 비고(검수내역 화면에서 직접 입력)
     trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
+    trackLabel: courseKey === 'voc-senior' ? historyTrackLabel({ courseKey }) : '',
     allPass: lastCheck.allPass,
     passCount: lastCheck.passCount,
     total: lastCheck.checks.length,
@@ -2558,6 +2604,12 @@ function setHistoryDatePreset(kind) {
 /* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
 function historyTrackLabel(r) {
   const spec = COURSE_SPECS[r.courseKey];
+  // v1.9.21: 중장년특화(장기)는 단일 트랙(durationTracks 없음) → 세부기준 총시간 범위로 표시 (과거 저장 건 포함)
+  if (r.courseKey === 'voc-senior') {
+    if (r.trackLabel) return r.trackLabel;
+    const st = (typeof Store !== 'undefined' && Store.getSpec) ? (Store.getSpec('voc-senior').standards || {}) : {};
+    return `6개월(${st.totalHoursMin || 480}~${st.totalHoursMax || 576}시간)`;
+  }
   if (!spec || !spec.durationTracks || !r.trackKey) return '-';
   const t = spec.durationTracks[r.trackKey];
   return t ? t.trackLabel : '-';
@@ -2998,7 +3050,7 @@ Object.assign(window, {
   renderSpecStandards, stdTab, saveSpecStandards,
   addRule, delRule,
   addRow, delRow, clearRows, loadSample, runCheck, importCsv, downloadTemplate,
-  onPdfPick, onPdfDrop, runRoadmapAnalyze, saveCheckResult, saveCheckResultToHistory,
+  onPdfPick, onPdfDrop, onPdfDragOver, onPdfDragLeave, runRoadmapAnalyze, saveCheckResult, saveCheckResultToHistory,
   openPrintPreview, closePrintPreview, printReport, exportReportPdf,
   renderLiberalArts, laAddRow, laDelRow, laSave,
   laToggleRulePanel, laSaveRule, laResetRule,

@@ -715,3 +715,7 @@ a { color: inherit; text-decoration: none; }
 .menu-cards{align-items:start}
 .home-notice .notice-em{color:#ffd166;font-weight:700;text-decoration:underline;text-underline-offset:3px}
 .menu-card p.desc-oneline{font-size:11px;letter-spacing:-.4px}
+/* v1.9.20 드래그 중 드롭존 강조 */
+.dropzone.dragover{border-color:var(--c-blue-600,#1d4ed8)!important;background:rgba(37,99,235,.08)!important;box-shadow:0 0 0 3px rgba(37,99,235,.18)}
+.dropzone *{pointer-events:none}
+.dropzone input{pointer-events:auto}
