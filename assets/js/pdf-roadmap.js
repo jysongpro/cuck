@@ -602,6 +602,26 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     p.isTotal = p.name === '총계' || p.name === '소계';
     p.nameOnly = !!p.name && !p.isTotal && !p.hasData && !HEADER_RE.test(despace(p.name)) && /[가-힣A-Za-z]/.test(p.name);
   });
+  // v1.9.26 — 두 줄 교과목명: 둘째 줄 조각(예: "전기자동차배터리충전실" / "습")이 능력단위 값 행과 같은 높이에 있으면
+  //  값이 있는 행으로 읽혀 별도 교과목이 된다. 시간(HOURS) 없이 이름 조각만 있고, 바로 위(10pt 이내)에
+  //  시간이 있는 교과목 행이 있으면 이름을 이어 붙이고 이 행은 능력단위 값 행으로만 남긴다.
+  //  반대로 첫 줄이 이름만, 둘째 줄에 시간이 있는 경우도 합친다.
+  for (let i = 1; i < parsed.length; i++) {
+    const cur = parsed[i];
+    if (!cur.name || cur.isTotal || HEADER_RE.test(despace(cur.name))) continue;
+    let j = i - 1; while (j >= 0 && !parsed[j].name) j--;
+    if (j < 0) continue;
+    const prev = parsed[j];
+    if (prev.isTotal || HEADER_RE.test(despace(prev.name))) continue;
+    const gap = cur.top - prev.top;
+    if (gap <= 0 || gap > 10) continue;
+    const curHas = isNumStr(cur.hoursStr), prevHas = isNumStr(prev.hoursStr);
+    if (!curHas && prevHas && despace(cur.name).length <= 8) {
+      prev.name = despace(prev.name) + despace(cur.name); cur.name = ''; cur.nameOnly = false;
+    } else if (curHas && !prevHas && prev.nameOnly && despace(prev.name).length >= 4) {
+      cur.name = despace(prev.name) + despace(cur.name); prev.name = ''; prev.nameOnly = false;
+    }
+  }
   const boundaries = parsed
     .map((p, idx) => ({ idx, ...p, extraNcs: 0, extraSem1: 0, extraSem2: 0, extraSem3: 0, extraHours: 0, units: 0 }))
     .filter(p => p.isTotal || p.nameOnly || (p.name && p.hasData && !HEADER_RE.test(despace(p.name))));
@@ -653,19 +673,35 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     const vals = parsed.map((q, idx) => ({ q, idx })).filter(({ q, idx }) => !totalTops.has(idx) && !q.isTotal &&
       ((q.cnt.semTotal !== '' && q.cnt.semTotal > 0) || q.cnt.sem1 > 0 || q.cnt.sem2 > 0 || q.cnt.sem3 > 0));
     let vi = 0; const out = new Map();
+    // v1.9.25 — 페이지 경계에서 나뉜 교과목: 이전 페이지의 남은 시간(carry)을 이어서 소비하고,
+    //  이 페이지 마지막 교과목이 값 행 부족으로 끝나면 다음 페이지로 넘긴다.
+    const courseList = list.filter(b => !b.isTotal);
+    const lastCourse = courseList[courseList.length - 1];
+    const lastIsTail = lastCourse && list.indexOf(lastCourse) === list.length - 1;
+    const carryIn = state.carry || null;
+    let carryOut = null;
     for (const b of list) {
       if (b.isTotal) continue;
-      const H = Number(b.hoursStr); let sum = 0; const acc = { ncs: 0, s1: 0, s2: 0, s3: 0, n: 0 };
+      let H = Number(b.hoursStr);
+      const isCont = carryIn && b === courseList[0] && despace(b.name) === carryIn.key;
+      if (isCont) H = carryIn.remaining;
+      let sum = 0; const acc = { ncs: 0, s1: 0, s2: 0, s3: 0, n: 0, cont: !!isCont };
       while (vi < vals.length && sum < H) {
         const c = vals[vi++].q.cnt; const t = (c.semTotal !== '' && c.semTotal > 0) ? c.semTotal : (c.sem1 + c.sem2 + c.sem3);
         sum += t; acc.ncs += (c.ncsHours !== '' ? Number(c.ncsHours) : 0); acc.s1 += c.sem1; acc.s2 += c.sem2; acc.s3 += c.sem3; acc.n++;
       }
+      if (sum < H && b === lastCourse && lastIsTail && vi >= vals.length && sum > 0 && acc.s1 + acc.s2 + acc.s3 === sum) {
+        carryOut = { key: despace(b.name), remaining: H - sum };
+        out.set(b, acc); continue;
+      }
       if (sum !== H || acc.s1 + acc.s2 + acc.s3 !== H) return null;
       out.set(b, acc);
     }
+    out.carryOut = carryOut;
     return out;
   })();
   if (seqResult) {
+    state.carry = seqResult.carryOut || null;
     for (let i = boundaries.length - 1; i >= 0; i--) if (boundaries[i].nameOnly) boundaries.splice(i, 1);
     boundaries.forEach(b => {
       const acc = seqResult.get(b); if (!acc) return;
@@ -694,9 +730,10 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     }
     if (b.seq) {   // v1.9.24 순차 소비 결과(교과목 시간 = 능력단위 편성시간 합)
       const gwan = groupOrder[state.groupIdx] || '', semTotal = Number(hoursStr), finalNcs = b.seq.ncs || '';
-      if (b.seq.s1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: b.seq.s1 });
-      if (b.seq.s2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: b.seq.s2 });
-      if (b.seq.s3 > 0) courses.push({ name, gwan, semester: '3', ncsHours: finalNcs, semTotal, credit: b.seq.s3 });
+      const cont = b.seq.cont || undefined;
+      if (b.seq.s1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: b.seq.s1, cont });
+      if (b.seq.s2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: b.seq.s2, cont });
+      if (b.seq.s3 > 0) courses.push({ name, gwan, semester: '3', ncsHours: finalNcs, semTotal, credit: b.seq.s3, cont });
       return;
     }
     // 실제 교과목 행: 자기 행의 값 + 능력단위 서브행에서 합산된 값을 더한다(단일 능력단위 교과는 extra가 0이라 영향 없음)
@@ -801,6 +838,34 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
     }
     const found = extractVocTechCourses(items, state, scanOrder, vocBoundsCache || VOC_BOUNDS);
     if (p > startPage && found.courses.length === 0 && found.subtotals.length === 0 && !found.totalRow) break; // 표가 끝난 것으로 판단
+    // v1.9.25 — 페이지를 넘어 이어지는 동일 교과목(다음 페이지 첫머리에 교과목명이 다시 인쇄됨)은 하나로 병합
+    {
+      const prevLast = courses.length ? courses[courses.length - 1] : null;
+      const pk = prevLast ? despace(prevLast.name) : '';
+      const pageCourses = found.courses.slice();
+      while (pageCourses.length && prevLast) {
+        const c = pageCourses[0];
+        if (despace(c.name) !== pk || (c.gwan && prevLast.gwan && c.gwan !== prevLast.gwan)) break;
+        pageCourses.shift();
+        const same = courses.find(x => despace(x.name) === pk && x.semester === c.semester);
+        const H = Number(prevLast.semTotal) || Number(c.semTotal) || 0;
+        if (same) {
+          const add = c.cont ? Number(c.credit) : (Number(same.credit) + Number(c.credit) <= H ? Number(c.credit) : 0);
+          same.credit = Number(same.credit) + add;
+          const n1 = Number(same.ncsHours) || 0, n2 = Number(c.ncsHours) || 0;
+          if (c.cont || n1 + n2 <= H) same.ncsHours = (n1 + n2) || same.ncsHours;
+        } else {
+          courses.push(Object.assign({}, c, { gwan: prevLast.gwan || c.gwan, semTotal: H }));
+        }
+      }
+      // 병합 후 NCS적용시간은 해당 교과목의 모든 학기 행에 동일하게 반영
+      if (prevLast) {
+        const rowsK = courses.filter(x => despace(x.name) === pk);
+        const nMax = Math.max(0, ...rowsK.map(x => Number(x.ncsHours) || 0));
+        if (nMax) rowsK.forEach(x => { x.ncsHours = nMax; });
+      }
+      found.courses = pageCourses;
+    }
     courses = courses.concat(found.courses);
     found.subtotals.forEach(s => { subtotalByLabel[s.label] = s; });
     if (found.totalRow) totalRow = found.totalRow;
