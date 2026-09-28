@@ -882,15 +882,17 @@ function seniorDetectCols(lines) {
   if (nameX == null || planX == null) return null;
   ncsX = ncsX || planX + 28;
   const mid = (planX + ncsX) / 2 + 6;
-  return { headerTop, GWAN: [0, nameX - 25], NAME: [nameX - 25, hoursX - 12], HOURS: [hoursX - 12, hoursX + 22],
+  return { headerTop, GWAN: [0, nameX - 45], NAME: [nameX - 45, hoursX - 12], HOURS: [hoursX - 12, hoursX + 22],
            UNIT: [hoursX + 22, planX - 8], PLAN: [planX - 8, mid], NCS: [mid, ncsX + 30] };
 }
 function seniorGroupOf(text, idx) {
   const s = despace(text);
-  if (/교양/.test(s)) return '교양교과';
-  if (/기초/.test(s)) return '기초기술';
-  if (/계열|직종공통/.test(s)) return '계열공통';
-  if (/특화|전공/.test(s)) return '특화전공';
+  // v1.9.19: 교과명(예: '…용접기초')에 '기초'가 들어가도 오인하지 않도록 구분명 우선순위 조정
+  if (/교양교과|교양/.test(s)) return '교양교과';
+  if (/계열공통|직종공통|계열/.test(s)) return '계열공통';
+  if (/특화전공|특화/.test(s)) return '특화전공';
+  if (/기초기술|기초/.test(s)) return '기초기술';
+  if (/전공/.test(s)) return '특화전공';
   return VOC_GROUP_ORDER[idx] || '';
 }
 async function analyzeVocSenior(file, locationText) {
