@@ -606,6 +606,19 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
   //  값이 있는 행으로 읽혀 별도 교과목이 된다. 시간(HOURS) 없이 이름 조각만 있고, 바로 위(10pt 이내)에
   //  시간이 있는 교과목 행이 있으면 이름을 이어 붙이고 이 행은 능력단위 값 행으로만 남긴다.
   //  반대로 첫 줄이 이름만, 둘째 줄에 시간이 있는 경우도 합친다.
+  // v1.9.28 — 두 줄 교과목명 사이에 교과목 '시간'만 단독 행으로 인쇄된 경우(이름1 / 시간 / 이름2):
+  //  시간 행을 ±10pt 이내의 시간 없는 이름 행(위쪽 우선)에 붙인다.
+  parsed.forEach((r, i) => {
+    if (r.name || r.isTotal || !isNumStr(r.hoursStr)) return;
+    const cand = parsed.filter(q => q !== r && q.name && !q.isTotal && !isNumStr(q.hoursStr) &&
+      !HEADER_RE.test(despace(q.name)) && /[가-힣A-Za-z]/.test(q.name) && !/^\(/.test(q.name.trim()) && Math.abs(q.top - r.top) <= 10);
+    if (!cand.length) return;
+    cand.sort((a, b) => ((a.top <= r.top ? 0 : 1) - (b.top <= r.top ? 0 : 1)) || Math.abs(a.top - r.top) - Math.abs(b.top - r.top));
+    const tgt = cand[0];
+    tgt.hoursStr = r.hoursStr; r.hoursStr = '';
+    tgt.nameOnly = false; tgt.hasData = true;
+    r.hasData = r.cnt.ncsHours !== '' || r.cnt.sem1 > 0 || r.cnt.sem2 > 0 || r.cnt.sem3 > 0 || (r.cnt.semTotal !== '' && r.cnt.semTotal > 0);
+  });
   for (let i = 1; i < parsed.length; i++) {
     const cur = parsed[i];
     if (!cur.name || cur.isTotal || HEADER_RE.test(despace(cur.name))) continue;
@@ -944,6 +957,7 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
     } catch (e) { console.error('[voc-tech narrative extract error]', e); }
   }
 
+  courses = mergeSplitCourseNames(courses);
   return { info, courses, startPage, narrative, summary };
 }
 
@@ -1077,5 +1091,37 @@ async function analyzeVocSenior(file, locationText) {
   });
   const tHours = total ? total.hours : groups.reduce((s, g) => s + g.hours, 0);
   const tNcs = total ? total.ncsHours : groups.reduce((s, g) => s + (+g.ncsHours || 0), 0);
+  const mergedCourses = mergeSplitCourseNames(courses); courses.length = 0; courses.push(...mergedCourses);
   return { info, courses, startPage, narrative: {}, summary: { groups, total: tHours, totalInfo: { hours: tHours, ncsHours: tNcs, sem1: tHours, sem2: 0, sem3: 0 } } };
+}
+
+/* v1.9.27 — 최종 교과목 목록 후처리: 두 줄 교과목명의 둘째 줄 조각(예: "습", "실습", "제어")이
+ * 별도 교과목으로 분리된 경우, 바로 앞 교과목(같은 구분)에 이름을 이어 붙이고 시간 값을 합산한다.
+ * 조건: 조각 이름(공백 제거)이 3자 이하 · 한글/영문만 · 앞 교과목과 구분(gwan)이 같음. */
+function mergeSplitCourseNames(courses) {
+  const out = [];
+  const num = v => (v === '' || v == null) ? 0 : Number(v) || 0;
+  courses.forEach(c => {
+    const nm = despace(c.name || '');
+    const prev = out.length ? out[out.length - 1] : null;
+    if (prev && nm.length > 0 && nm.length <= 3 && /^[가-힣A-Za-z]+$/.test(nm) && (prev.gwan || '') === (c.gwan || '')) {
+      const baseName = prev.name;
+      const joined = despace(baseName) + nm;
+      // 앞 교과목의 모든 학기 행(같은 이름)을 새 이름으로 갱신
+      out.filter(x => x.name === baseName).forEach(x => { x.name = joined; });
+      const same = out.find(x => x.name === joined && String(x.semester) === String(c.semester));
+      const semTotal = num(prev.semTotal) + num(c.semTotal);
+      if (same) {
+        same.credit = num(same.credit) + num(c.credit);
+        const n = num(same.ncsHours) + num(c.ncsHours); same.ncsHours = n || same.ncsHours;
+        if (c.units && same.units) same.units = same.units.concat(c.units);
+      } else {
+        out.push(Object.assign({}, c, { name: joined }));
+      }
+      out.filter(x => x.name === joined).forEach(x => { x.semTotal = semTotal; });
+      return;
+    }
+    out.push(c);
+  });
+  return out;
 }
