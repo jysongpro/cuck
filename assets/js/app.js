@@ -2787,7 +2787,7 @@ function renderHistory() {
         <div class="panel hist-table-wrap">
           <table class="vtable hist-table">
             <thead><tr>
-              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">구분(시간)</th>' : ''}
+              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : ''}
               <th class="col-pathway">과정평가형</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2819,7 +2819,7 @@ function exportHistoryToExcel() {
   const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
   if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
-    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '구분(시간)', '과정평가형', '저장일시', '판정', '충족률', '비고']
+    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '저장일시', '판정', '충족률', '비고']
     : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
