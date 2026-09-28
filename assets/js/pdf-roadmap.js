@@ -642,6 +642,36 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
     best.extraSem3 += p.cnt.sem3;
     best.extraHours += isNumStr(p.hoursStr) ? Number(p.hoursStr) : (p.cnt.semTotal || 0);
   });
+  // v1.9.24 — 신규 출력형식: 교과목 '시간' 칸 = 능력단위별 편성시간(계)의 합.
+  //  교과목명은 병합셀 세로 가운데에 인쇄되어 가장 가까운 행 배정이 어긋날 수 있으므로,
+  //  표 순서대로 값 행(능력단위 행/교과 자기 행)을 차례로 소비하며 편성시간(계) 합이 교과목 '시간'과
+  //  정확히 일치하도록 묶는다. 모든 교과목이 정확히 일치할 때만 채택(불일치 시 기존 로직 유지).
+  const seqResult = (() => {
+    const list = boundaries.filter(b => b.isTotal || (!b.nameOnly && isNumStr(b.hoursStr) && Number(b.hoursStr) > 0));
+    if (!list.some(b => !b.isTotal)) return null;
+    const totalTops = new Set(list.filter(b => b.isTotal).map(b => b.idx));
+    const vals = parsed.map((q, idx) => ({ q, idx })).filter(({ q, idx }) => !totalTops.has(idx) && !q.isTotal &&
+      ((q.cnt.semTotal !== '' && q.cnt.semTotal > 0) || q.cnt.sem1 > 0 || q.cnt.sem2 > 0 || q.cnt.sem3 > 0));
+    let vi = 0; const out = new Map();
+    for (const b of list) {
+      if (b.isTotal) continue;
+      const H = Number(b.hoursStr); let sum = 0; const acc = { ncs: 0, s1: 0, s2: 0, s3: 0, n: 0 };
+      while (vi < vals.length && sum < H) {
+        const c = vals[vi++].q.cnt; const t = (c.semTotal !== '' && c.semTotal > 0) ? c.semTotal : (c.sem1 + c.sem2 + c.sem3);
+        sum += t; acc.ncs += (c.ncsHours !== '' ? Number(c.ncsHours) : 0); acc.s1 += c.sem1; acc.s2 += c.sem2; acc.s3 += c.sem3; acc.n++;
+      }
+      if (sum !== H || acc.s1 + acc.s2 + acc.s3 !== H) return null;
+      out.set(b, acc);
+    }
+    return out;
+  })();
+  if (seqResult) {
+    for (let i = boundaries.length - 1; i >= 0; i--) if (boundaries[i].nameOnly) boundaries.splice(i, 1);
+    boundaries.forEach(b => {
+      const acc = seqResult.get(b); if (!acc) return;
+      b.seq = acc;
+    });
+  }
   // 능력단위 행이 하나도 붙지 않은 이름-only 행(설명문 줄바꿈 등)은 교과목이 아니므로 제외
   for (let i = boundaries.length - 1; i >= 0; i--) if (boundaries[i].nameOnly && !boundaries[i].units) boundaries.splice(i, 1);
 
@@ -660,6 +690,13 @@ function extractVocTechCourses(items, state, groupOrder, bounds) {
       const label = groupOrder[state.groupIdx] || `구분${state.groupIdx + 1}`;
       const ncsHours = cnt.ncsHours !== '' ? cnt.ncsHours : (b.extraNcs || '');
       subtotals.push({ label, ncsHours, total: cnt.semTotal !== '' ? cnt.semTotal : Number(hoursStr) || 0, sem1: cnt.sem1 || b.extraSem1, sem2: cnt.sem2 || b.extraSem2, sem3: cnt.sem3 || b.extraSem3 });
+      return;
+    }
+    if (b.seq) {   // v1.9.24 순차 소비 결과(교과목 시간 = 능력단위 편성시간 합)
+      const gwan = groupOrder[state.groupIdx] || '', semTotal = Number(hoursStr), finalNcs = b.seq.ncs || '';
+      if (b.seq.s1 > 0) courses.push({ name, gwan, semester: '1', ncsHours: finalNcs, semTotal, credit: b.seq.s1 });
+      if (b.seq.s2 > 0) courses.push({ name, gwan, semester: '2', ncsHours: finalNcs, semTotal, credit: b.seq.s2 });
+      if (b.seq.s3 > 0) courses.push({ name, gwan, semester: '3', ncsHours: finalNcs, semTotal, credit: b.seq.s3 });
       return;
     }
     // 실제 교과목 행: 자기 행의 값 + 능력단위 서브행에서 합산된 값을 더한다(단일 능력단위 교과는 extra가 0이라 영향 없음)
