@@ -2565,6 +2565,7 @@ function saveCheckResultToHistory(courseKey) {
     remark: '',           // 비고(검수내역 화면에서 직접 입력)
     trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
     trackLabel: courseKey === 'voc-senior' ? historyTrackLabel({ courseKey }) : '',
+    actualHours: (isVocTimeBased(courseKey) && lastVocSummary && lastVocSummary.total != null) ? +lastVocSummary.total : null,   // v1.9.22 학과 실제 편성시간
     allPass: lastCheck.allPass,
     passCount: lastCheck.passCount,
     total: lastCheck.checks.length,
@@ -2602,7 +2603,19 @@ function setHistoryDatePreset(kind) {
   renderHistory();
 }
 /* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
+/* v1.9.22 — 직업교육과정 검수내역 구분(시간): 학과 PDF의 실제 총 편성시간 출력
+ * 저장값(actualHours) → 과거 저장 건은 검수항목 '총 편성시간' 값에서 추출 → 없으면 기준 구분명 */
+function historyActualHours(r) {
+  if (r.actualHours != null && r.actualHours !== '') return +r.actualHours;
+  const c = (r.checks || []).find(x => /총\s*(편성|운영)\s*시간/.test(x.title || ''));
+  const m = c && String(c.val || '').match(/(\d{2,4})\s*h/);
+  return m ? +m[1] : null;
+}
 function historyTrackLabel(r) {
+  if (typeof isVocTimeBased === 'function' && isVocTimeBased(r.courseKey) && r.checks) {
+    const h = historyActualHours(r);
+    if (h != null) return `${h}시간`;
+  }
   const spec = COURSE_SPECS[r.courseKey];
   // v1.9.21: 중장년특화(장기)는 단일 트랙(durationTracks 없음) → 세부기준 총시간 범위로 표시 (과거 저장 건 포함)
   if (r.courseKey === 'voc-senior') {
@@ -2671,7 +2684,7 @@ function renderHistory() {
       ${isAdmin() ? `<td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>` : ''}
       <td>${i + 1}</td>
       <td class="l">${esc(r.info.과정 || r.courseName)}</td>
-      <td class="l">${esc(r.info.대학 || '-')}</td>
+      <td class="td-univ" title="${esc(r.info.대학 || '')}">${esc(r.info.대학 || '-')}</td>
       <td>${esc(r.info.캠퍼스 || '-')}</td>
       <td>${esc(r.info.계열 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
@@ -2679,7 +2692,7 @@ function renderHistory() {
       ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
       <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} ${isAdmin() ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
       <td>${esc(r.savedAt)}</td>
-      <td><span class="chip ${r.allPass ? 'chip-ok' : 'chip-no'}">${r.allPass ? '적합' : '부적합'}</span></td>
+      <td class="td-verdict"><span class="chip ${r.allPass ? 'chip-ok' : 'chip-no'}">${r.allPass ? '적합' : '부적합'}</span></td>
       <td>${r.passCount}/${r.total}</td>
       <td class="l">${isAdmin() ? `<input type="text" class="hist-inline-input" data-id="${r.id}" data-field="remark" value="${esc(r.remark || '')}" placeholder="비고 입력" onchange="updateHistoryField('${r.id}','remark',this.value)">` : esc(r.remark || '-')}</td>
       <td>
