@@ -48,7 +48,7 @@
   const HISTORY_KEY_ = 'kpu-curri-history-v1';
   const LEGACY_SHARED_DATE_KEY = 'kpu-curri-histdate-v1';
   const appKeys = () => (typeof allStorageKeys === 'function' ? allStorageKeys() : []);
-  const isAppKey = (k) => k.indexOf(USER_PREFIX) === 0 || (k !== HISTORY_KEY_ && appKeys().includes(k));
+  const isAppKey = (k) => k !== HISTORY_KEY_ && appKeys().includes(k);   // v2.0.2: 사용자별 검색조건 저장 폐지
 
   /* ---- v2.0.1 검수내역: 1건 = 1문서(서브컬렉션 history) — 문서 1MB 한도와 무관하게 수천 건 저장 가능 ---- */
   const histCol = docRef.collection('history');
@@ -168,6 +168,8 @@
       if (typeof toast === 'function') toast(`기존 검수내역 ${old.length}건을 서버의 개별 저장 구조로 옮겼습니다.`);
     }
     if (mainData[fieldName(LEGACY_SHARED_DATE_KEY)] != null) pending.set(LEGACY_SHARED_DATE_KEY, null);
+    // v2.0.2: v2.0.1에서 저장된 사용자별 검색조건 필드 정리(서버에서 삭제)
+    Object.keys(mainData).forEach(f => { const k = unfieldName(f); if (k.indexOf(USER_PREFIX) === 0) pending.set(k, null); });
     const moved = migrateLegacy(mainData);
     const app = document.getElementById('app'); if (app) app.dataset.loaded = '1';
     ready._resolve();

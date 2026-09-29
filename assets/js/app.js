@@ -228,8 +228,6 @@ const SIMPLE_RULE_COURSE_DEFAULTS = {
 /* 이 앱이 사용하는 모든 localStorage 키 — 내보내기/가져오기(백업·복원) 대상 */
 function allStorageKeys() {
   const keys = [STORE_KEY, RULE_KEY, HISTORY_KEY, LIBERAL_KEY, LIBERAL_RULE_KEY, VOC_TRACK_KEY, ADMIN_PASS_KEY];
-  // 사용자별 검수내역 검색조건(서버에서 받아온 키)
-  if (window.AppStorage && AppStorage.keys) AppStorage.keys().filter(k => k.indexOf('kpu-curri-histfilter-v1::') === 0).forEach(k => keys.push(k));
   Object.keys(SIMPLE_LIST_TYPES).forEach(type => {
     keys.push(SIMPLE_LIST_TYPES[type].storeKey, SIMPLE_LIST_TYPES[type].ruleKey);
   });
@@ -2586,35 +2584,12 @@ function saveCheckResultToHistory(courseKey) {
 let historyFilter = { cat: 'degree', univ: '', campus: '', series: '', verdict: '' };
 /* 검수내역 기간 검색(저장일시 기준) — 마지막 검색값을 서버에 기억 */
 const HIST_DATE_KEY = 'kpu-curri-histdate-v1';            // (구버전 공용 기간값 — 더 이상 사용하지 않음)
-/* v2.0.1 — 검수내역 검색조건(기간·판정·대학·캠퍼스·계열)을 사용자별로 서버에 저장
- *  서버 키: kpu-curri-histfilter-v1::<사용자명>. 사용자명은 검수내역 화면에서 입력(페이지 메모리에만 유지). */
-const HIST_FILTER_PREFIX = 'kpu-curri-histfilter-v1::';
-let histUser = '';
+/* v2.0.2 — 검수내역 검색조건(기간·판정 등)은 서버에 저장하지 않음: 현재 페이지 메모리에서만 유지(새로고침 시 초기화) */
 let _histDateMem = { from: '', to: '' };
-function histUserKey(u) { return HIST_FILTER_PREFIX + String(u).trim().replace(/[.\/#$\[\]\s]+/g, '_').slice(0, 40); }
 const HistDateStore = {
   get() { return Object.assign({}, _histDateMem); },
-  set(v) { _histDateMem = { from: v.from || '', to: v.to || '' }; saveHistUserFilter(); },
+  set(v) { _histDateMem = { from: v.from || '', to: v.to || '' }; },
 };
-function saveHistUserFilter() {
-  if (!histUser) return;
-  AppStorage.setItem(histUserKey(histUser), JSON.stringify({
-    from: _histDateMem.from, to: _histDateMem.to, verdict: historyFilter.verdict || '',
-    cat: historyFilter.cat || '', univ: historyFilter.univ || '', campus: historyFilter.campus || '', series: historyFilter.series || '',
-  }));
-}
-function setHistoryUser(name) {
-  histUser = String(name || '').trim();
-  if (histUser) {
-    let saved = null; try { saved = JSON.parse(AppStorage.getItem(histUserKey(histUser))); } catch {}
-    if (saved) {
-      _histDateMem = { from: saved.from || '', to: saved.to || '' };
-      historyFilter = { cat: saved.cat || historyFilter.cat, univ: saved.univ || '', campus: saved.campus || '', series: saved.series || '', verdict: saved.verdict || '' };
-      toast(`'${histUser}' 님의 이전 검색조건을 불러왔습니다.`);
-    } else { saveHistUserFilter(); toast(`'${histUser}' 님의 검색조건을 이제부터 서버에 저장합니다.`); }
-  }
-  renderHistory();
-}
 function setHistoryDate(field, value) {
   const d = HistDateStore.get(); d[field] = value || '';
   if (d.from && d.to && d.from > d.to) { toast('시작일이 종료일보다 늦습니다. 기간을 확인해 주세요.'); }
@@ -2667,7 +2642,6 @@ function setHistoryFilter(field, value) {
   if (field === 'cat') { historyFilter.univ = ''; historyFilter.campus = ''; historyFilter.series = ''; }
   if (field === 'univ') { historyFilter.campus = ''; historyFilter.series = ''; }
   if (field === 'campus') { historyFilter.series = ''; }
-  saveHistUserFilter();
   renderHistory();
 }
 function resetHistoryFilter() {
@@ -2676,12 +2650,10 @@ function resetHistoryFilter() {
   historyFilter.univ = '';
   historyFilter.campus = '';
   historyFilter.series = '';
-  saveHistUserFilter();
   renderHistory();
 }
 function setHistoryTab(tabKey) {
   historyFilter = { cat: tabKey, univ: '', campus: '', series: '', verdict: historyFilter.verdict || '' };
-  saveHistUserFilter();
   renderHistory();
 }
 function renderHistory() {
@@ -2779,14 +2751,6 @@ function renderHistory() {
                 <option value="">전체</option>
                 ${seriesOptions.map(s => `<option value="${esc(s)}" ${historyFilter.series === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
               </select>
-            </div>
-          </div>
-          <div class="field" style="margin:0;min-width:120px">
-            <label>사용자(검색조건 저장)</label>
-            <div class="input-wrap">
-              <input type="text" value="${esc(histUser)}" placeholder="이름 입력" style="width:110px"
-                onkeydown="if(event.key==='Enter'){this.blur();}" onchange="setHistoryUser(this.value)"
-                title="이름을 입력하면 기간·판정 등 검색조건이 사용자별로 서버에 저장되고, 다음에 같은 이름을 입력하면 불러옵니다.">
             </div>
           </div>
           <div class="field" style="margin:0;min-width:130px">
