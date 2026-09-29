@@ -500,13 +500,13 @@ a { color: inherit; text-decoration: none; }
 .hist-table .col-univ { width: calc(3em + 14px); }
 .hist-table .col-campus { width: 8%; }
 .hist-table .col-series { width: 7%; }
-.hist-table .col-dept { width: 10%; }
+.hist-table .col-dept { width: 9%; }
 .hist-table .col-major { width: 9%; }
-.hist-table .col-pathway { width: 6%; }
+.hist-table .col-pathway { width: 5%; }
 .hist-table .col-date { width: 9%; }
 .hist-table .col-verdict { width: 78px; }
 .hist-table .col-rate { width: 5%; }
-.hist-table .col-remark { width: 10%; }
+.hist-table .col-remark { width: 8%; }
 .hist-table .col-manage { width: 8%; }
 @media (max-width: 900px) {
   .hist-table { font-size: 10.5px; }
@@ -727,3 +727,11 @@ a { color: inherit; text-decoration: none; }
 .hist-table td.td-verdict svg { flex: 0 0 auto; }
 @media (max-width: 1100px) { .hist-table .col-verdict { width: 70px; } .hist-table td.td-verdict > * { font-size: 10.5px; padding: 2px 6px; } }
 @media (max-width: 800px)  { .hist-table .col-verdict { width: 60px; } .hist-table td.td-verdict > * { font-size: 9.5px; padding: 2px 4px; } }
+/* v2.0.3 과정평가형·자격명 */
+.hist-table .col-qual { width: 9%; }
+.hist-table td.td-qual { padding: 2px 4px !important; }
+.hist-table .hist-qual { width: 100%; box-sizing: border-box; font-size: 12px; padding: 3px 5px; border: 1px solid #cfd8e8; border-radius: 5px; }
+.hist-table .hist-qual:disabled { background: transparent; border-color: transparent; }
+.pathway-save { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; margin-right: 6px; }
+.pathway-save input[type=text] { padding: 6px 8px; border: 1px solid #cfd8e8; border-radius: 6px; font-size: 13px; }
+.pathway-save input[type=text]:disabled { background: #f1f4f9; }

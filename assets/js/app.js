@@ -2242,6 +2242,10 @@ function renderCheckResult(courseKey, checks) {
     </div>
 
     <div class="toolbar" style="margin:16px 0 4px">
+      <label class="pathway-save" title="과정평가형으로 운영하는 경우 체크하고 자격명을 입력하세요">
+        <input type="checkbox" id="savePathway" ${(courseKey === 'voc-hitech' && lastVocPathway) ? 'checked' : ''} onchange="document.getElementById('saveQual').disabled=!this.checked"> 과정평가형
+        <input type="text" id="saveQual" placeholder="자격명 입력" ${(courseKey === 'voc-hitech' && lastVocPathway) ? '' : 'disabled'} style="width:150px">
+      </label>
       <button class="btn btn-soft" onclick="saveCheckResultToHistory('${courseKey}')">${ICON.check} 검수결과 저장</button>
       <button class="btn btn-soft" onclick="saveCheckResult('${courseKey}')">${ICON.upload} 검수결과 저장(CSV)</button>
       <button class="btn btn-primary" onclick="openPrintPreview('${courseKey}')">${ICON.book} 검수결과 출력하기</button>
@@ -2542,6 +2546,10 @@ function runCheck(courseKey) {
     </div>
 
     <div class="toolbar" style="margin:16px 0 4px">
+      <label class="pathway-save" title="과정평가형으로 운영하는 경우 체크하고 자격명을 입력하세요">
+        <input type="checkbox" id="savePathway" ${(courseKey === 'voc-hitech' && lastVocPathway) ? 'checked' : ''} onchange="document.getElementById('saveQual').disabled=!this.checked"> 과정평가형
+        <input type="text" id="saveQual" placeholder="자격명 입력" ${(courseKey === 'voc-hitech' && lastVocPathway) ? '' : 'disabled'} style="width:150px">
+      </label>
       <button class="btn btn-soft" onclick="saveCheckResultToHistory('${courseKey}')">${ICON.check} 검수결과 저장</button>
       <button class="btn btn-soft" onclick="saveCheckResult('${courseKey}')">${ICON.upload} 검수결과 저장(CSV)</button>
       <button class="btn btn-primary" onclick="openPrintPreview('${courseKey}')">${ICON.book} 검수결과 출력하기</button>
@@ -2564,7 +2572,9 @@ function saveCheckResultToHistory(courseKey) {
       년도: info.년도 || '', 캠퍼스: info.캠퍼스 || '', 과정: info.과정 || lastCheck.courseName || '',
       대학: info.대학 || lookupUnivByCampus(info.캠퍼스) || '', 계열: info.계열 || '', 학과: info.학과 || '', 전공: info.전공 || '',
     },
-    pathwayEval: (courseKey === 'voc-hitech' && lastVocPathway) ? true : false,   // 과정평가형 여부(체크박스, 검수내역 화면에서 직접 설정)
+    // v2.0.3 과정평가형 여부·자격명 — 저장 시 사용자가 직접 체크/입력(검수내역 표에서도 수정 가능)
+    pathwayEval: (() => { const el = document.getElementById('savePathway'); return el ? !!el.checked : ((courseKey === 'voc-hitech' && lastVocPathway) ? true : false); })(),
+    qualName: (() => { const el = document.getElementById('saveQual'), p = document.getElementById('savePathway'); return (el && p && p.checked) ? el.value.trim() : ''; })(),
     remark: '',           // 비고(검수내역 화면에서 직접 입력)
     trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
     trackLabel: courseKey === 'voc-senior' ? historyTrackLabel({ courseKey }) : '',
@@ -2695,7 +2705,8 @@ function renderHistory() {
       <td>${esc(r.info.학과 || '-')}</td>
       <td>${esc(r.info.전공 || '-')}</td>
       ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
-      <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} ${isAdmin() ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
+      <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
+      <td class="td-qual"><input type="text" class="hist-qual" value="${esc(r.qualName || '')}" placeholder="${r.pathwayEval ? '자격명 입력' : '-'}" ${r.pathwayEval ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','qualName',this.value.trim())" title="${esc(r.qualName || '과정평가형 자격명')}"></td>
       <td>${esc(r.savedAt)}</td>
       <td class="td-verdict"><span class="chip ${r.allPass ? 'chip-ok' : 'chip-no'}">${r.allPass ? '적합' : '부적합'}</span></td>
       <td>${r.passCount}/${r.total}</td>
@@ -2785,7 +2796,7 @@ function renderHistory() {
           <button class="btn btn-ghost btn-sm" onclick="toggleAllHistory(this)">전체 선택/해제</button>
           <button class="btn btn-danger btn-sm" onclick="deleteHistorySelected()">${ICON.no} 선택 삭제</button>
           <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel()">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
-          <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·과정평가형·비고는 표에서 직접 입력·수정할 수 있습니다.</span>
+          <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·비고는 관리자가, 과정평가형·자격명은 누구나 표에서 직접 입력·수정할 수 있습니다.</span>
         </div>` : `
         <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
           <div>검수결과 보기만 가능합니다. 삭제·엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div></div>`}
@@ -2793,7 +2804,7 @@ function renderHistory() {
           <table class="vtable hist-table">
             <thead><tr>
               ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : ''}
-              <th class="col-pathway">과정평가형</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
+              <th class="col-pathway">과정평가형</th><th class="col-qual">자격명</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
           </table>
@@ -2804,7 +2815,8 @@ function renderHistory() {
 
 /* 검수내역 표에서 직접 수정하는 필드(대학·과정평가형·비고)를 저장 */
 function updateHistoryField(id, field, value) {
-  if (!isAdmin()) { toast('수정은 관리자만 이용할 수 있습니다.'); renderHistory(); return; }
+  // v2.0.3: 과정평가형·자격명은 모든 사용자가 수정 가능, 그 외 필드는 관리자만
+  if (!isAdmin() && field !== 'pathwayEval' && field !== 'qualName') { toast('수정은 관리자만 이용할 수 있습니다.'); renderHistory(); return; }
   const r = HistoryStore.get(id);
   if (!r) return;
   if (field === '대학') {
@@ -2812,6 +2824,9 @@ function updateHistoryField(id, field, value) {
   } else if (field === '캠퍼스') {
     // 캠퍼스가 바뀌면 매핑표를 참조해 대학 값도 함께 자동 갱신
     HistoryStore.update(id, { info: { ...r.info, 캠퍼스: value, 대학: lookupUnivByCampus(value) || r.info.대학 || '' } });
+  } else if (field === 'pathwayEval') {
+    HistoryStore.update(id, value ? { pathwayEval: true } : { pathwayEval: false, qualName: '' });
+    renderHistory();
   } else {
     HistoryStore.update(id, { [field]: value });
   }
@@ -2824,8 +2839,8 @@ function exportHistoryToExcel() {
   const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
   if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
-    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '저장일시', '판정', '충족률', '비고']
-    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '과정평가형', '저장일시', '판정', '충족률', '비고'];
+    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고']
+    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
       i + 1,
@@ -2837,6 +2852,7 @@ function exportHistoryToExcel() {
       r.info.전공 || '',
       ...(tabKey === 'vocational' ? [historyTrackLabel(r)] : []),
       r.pathwayEval ? 'Y' : '',
+      r.qualName || '',
       r.savedAt || '',
       r.allPass ? '적합' : '부적합',
       `${r.passCount}/${r.total}`,
