@@ -22,16 +22,16 @@ const ICON = {
   logo: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
 };
 
-/* ---------- 저장소(localStorage) -------------------------------------- */
+/* ---------- 저장소(서버 Firestore · AppStorage) -------------------------------------- */
 const STORE_KEY = 'kpu-curri-standards-v1';
 /* ---------- 시간총량 트랙(1,200h/600h) 선택 저장소 -------------------- */
 const VOC_TRACK_KEY = 'kpu-curri-voctrack-v1';
 const VocTrackStore = {
-  all() { try { return JSON.parse(localStorage.getItem(VOC_TRACK_KEY)) || {}; } catch { return {}; } },
+  all() { try { return JSON.parse(AppStorage.getItem(VOC_TRACK_KEY)) || {}; } catch { return {}; } },
   get(courseKey) { return this.all()[courseKey] || '1200'; },
   set(courseKey, track) {
     const all = this.all(); all[courseKey] = track;
-    localStorage.setItem(VOC_TRACK_KEY, JSON.stringify(all));
+    AppStorage.setItem(VOC_TRACK_KEY, JSON.stringify(all));
   },
 };
 // courseKey의 스펙이 durationTracks를 가지면 현재 선택된 트랙의 하위 스펙을, 아니면 원 스펙을 반환
@@ -48,7 +48,7 @@ function specStoreKey(courseKey) {
 
 const Store = {
   all() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+    try { return JSON.parse(AppStorage.getItem(STORE_KEY)) || {}; }
     catch { return {}; }
   },
   // 검수 엔진용 — 평면(legacy) 기준값 반환. 스펙 과정은 매핑하여 호환 제공.
@@ -74,25 +74,25 @@ const Store = {
   saveSpec(courseKey, obj) {
     const all = this.all();
     all[specStoreKey(courseKey)] = obj;
-    localStorage.setItem(STORE_KEY, JSON.stringify(all));
+    AppStorage.setItem(STORE_KEY, JSON.stringify(all));
   },
   isSet(courseKey) { return !!this.all()[specStoreKey(courseKey)]; },
   save(courseKey, data) {
     const all = this.all();
     all[courseKey] = data;
-    localStorage.setItem(STORE_KEY, JSON.stringify(all));
+    AppStorage.setItem(STORE_KEY, JSON.stringify(all));
   },
   reset(courseKey) {
     const all = this.all();
     delete all[specStoreKey(courseKey)];
-    localStorage.setItem(STORE_KEY, JSON.stringify(all));
+    AppStorage.setItem(STORE_KEY, JSON.stringify(all));
   },
 };
 
 /* ---------- 교과목 편성기준 저장소 ------------------------------------ */
 const RULE_KEY = 'kpu-curri-courserules-v1';
 const CourseRuleStore = {
-  all() { try { return JSON.parse(localStorage.getItem(RULE_KEY)) || {}; } catch { return {}; } },
+  all() { try { return JSON.parse(AppStorage.getItem(RULE_KEY)) || {}; } catch { return {}; } },
   get(courseKey) {
     const skey = specStoreKey(courseKey);
     const saved = this.all()[skey];
@@ -107,22 +107,22 @@ const CourseRuleStore = {
   isSet(courseKey) { return !!this.all()[specStoreKey(courseKey)]; },
   save(courseKey, rules) {
     const all = this.all(); all[specStoreKey(courseKey)] = rules;
-    localStorage.setItem(RULE_KEY, JSON.stringify(all));
+    AppStorage.setItem(RULE_KEY, JSON.stringify(all));
   },
   reset(courseKey) {
     const all = this.all(); delete all[specStoreKey(courseKey)];
-    localStorage.setItem(RULE_KEY, JSON.stringify(all));
+    AppStorage.setItem(RULE_KEY, JSON.stringify(all));
   },
 };
 
-/* ---------- 검수결과 내역 저장소(localStorage) ------------------------- */
+/* ---------- 검수결과 내역 저장소(서버) ------------------------- */
 const HISTORY_KEY = 'kpu-curri-history-v1';
 const HistoryStore = {
   all() {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; }
+    try { return JSON.parse(AppStorage.getItem(HISTORY_KEY)) || []; }
     catch { return []; }
   },
-  save(list) { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); },
+  save(list) { AppStorage.setItem(HISTORY_KEY, JSON.stringify(list)); },
   add(record) {
     const list = this.all();
     list.unshift(record);
@@ -160,7 +160,7 @@ const LIBERAL_GROUPS = [
 // 저장/조회 시 courseKey를 voc-tech로 정규화해 두 과정이 같은 데이터를 참조하도록 한다.
 function vocAliasKey(courseKey) { return (courseKey === 'voc-hitech' || courseKey === 'voc-senior') ? 'voc-tech' : courseKey; }
 const LiberalArtsStore = {
-  all() { try { return JSON.parse(localStorage.getItem(LIBERAL_KEY)) || {}; } catch { return {}; } },
+  all() { try { return JSON.parse(AppStorage.getItem(LIBERAL_KEY)) || {}; } catch { return {}; } },
   get(courseKey) {
     const saved = this.all()[courseKey];
     const base = {};
@@ -175,18 +175,18 @@ const LiberalArtsStore = {
   isSet(courseKey) { return !!this.all()[courseKey]; },
   save(courseKey, data) {
     const all = this.all(); all[courseKey] = data;
-    localStorage.setItem(LIBERAL_KEY, JSON.stringify(all));
+    AppStorage.setItem(LIBERAL_KEY, JSON.stringify(all));
   },
   reset(courseKey) {
     const all = this.all(); delete all[courseKey];
-    localStorage.setItem(LIBERAL_KEY, JSON.stringify(all));
+    AppStorage.setItem(LIBERAL_KEY, JSON.stringify(all));
   },
 };
 
 /* ---------- 교양필수교과 검수로직(사용자 설정 가능) 저장소 ------------------------------ */
 const LIBERAL_RULE_KEY = 'kpu-curri-liberal-checkrule-v1';
 const LIBERAL_RULE_DEFAULT = {
-  checkOffered: true,       // 설정된 필수교과가 역량군별로 실제 편성되어있는지 검수
+  checkOffered: false,      // v1.9.30: 검수조건 폐지(역량군별 편성여부) — 저장값과 무관하게 항상 미적용
   checkMaxPerGroup: true,   // 역량군당 초과 편성 여부 검수
   maxPerGroup: 1,           // 역량군당 허용 최대 과목수
   checkTotal: true,         // 총 편성 역량군수/학점 검수
@@ -194,14 +194,14 @@ const LIBERAL_RULE_DEFAULT = {
   targetTotalCredit: 6,     // 목표 총학점
 };
 const LiberalCheckRuleStore = {
-  all() { try { return JSON.parse(localStorage.getItem(LIBERAL_RULE_KEY)) || {}; } catch { return {}; } },
+  all() { try { return JSON.parse(AppStorage.getItem(LIBERAL_RULE_KEY)) || {}; } catch { return {}; } },
   get(courseKey) {
     const saved = this.all()[courseKey];
-    return Object.assign({}, LIBERAL_RULE_DEFAULT, saved || {});
+    return Object.assign({}, LIBERAL_RULE_DEFAULT, saved || {}, { checkOffered: false });
   },
   save(courseKey, rule) {
     const all = this.all(); all[courseKey] = rule;
-    localStorage.setItem(LIBERAL_RULE_KEY, JSON.stringify(all));
+    AppStorage.setItem(LIBERAL_RULE_KEY, JSON.stringify(all));
   },
 };
 
@@ -227,18 +227,20 @@ const SIMPLE_RULE_COURSE_DEFAULTS = {
 };
 /* 이 앱이 사용하는 모든 localStorage 키 — 내보내기/가져오기(백업·복원) 대상 */
 function allStorageKeys() {
-  const keys = [STORE_KEY, RULE_KEY, HISTORY_KEY, LIBERAL_KEY, LIBERAL_RULE_KEY];
+  const keys = [STORE_KEY, RULE_KEY, HISTORY_KEY, LIBERAL_KEY, LIBERAL_RULE_KEY, VOC_TRACK_KEY, ADMIN_PASS_KEY];
+  // 사용자별 검수내역 검색조건(서버에서 받아온 키)
+  if (window.AppStorage && AppStorage.keys) AppStorage.keys().filter(k => k.indexOf('kpu-curri-histfilter-v1::') === 0).forEach(k => keys.push(k));
   Object.keys(SIMPLE_LIST_TYPES).forEach(type => {
     keys.push(SIMPLE_LIST_TYPES[type].storeKey, SIMPLE_LIST_TYPES[type].ruleKey);
   });
   return keys;
 }
-/* 현재 브라우저(localStorage)에 저장된 세부기준·등록교과·검수이력 등 모든 데이터를 하나의 JSON 파일로 내보낸다.
+/* 서버(Firestore)에 저장된 세부기준·등록교과·검수이력 등 모든 데이터를 하나의 JSON 파일로 내보낸다.
  * 다른 컴퓨터(브라우저)에서 importAllData()로 불러오면 지금과 동일한 상태로 복원된다. */
 function exportAllData() {
   const data = {};
   allStorageKeys().forEach(k => {
-    const v = localStorage.getItem(k);
+    const v = AppStorage.getItem(k);
     if (v !== null) data[k] = v;
   });
   const payload = {
@@ -259,11 +261,11 @@ function exportAllData() {
   URL.revokeObjectURL(url);
   toast('현재 설정·데이터를 파일로 내보냈습니다. 다른 컴퓨터에서 이 파일을 "데이터 가져오기"로 불러오면 동일하게 적용됩니다.');
 }
-/* exportAllData()가 만든 백업 JSON 파일을 읽어 현재 브라우저의 localStorage에 그대로 복원(덮어쓰기)한다. */
+/* exportAllData()가 만든 백업 JSON 파일을 읽어 서버(Firestore)에 그대로 복원(덮어쓰기)한다. */
 function importAllData(ev) {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
-  if (!confirm('파일에 저장된 설정·데이터로 현재 브라우저의 모든 저장값(세부기준, 등록교과, 검수이력 등)을 덮어씁니다. 계속할까요?')) { ev.target.value = ''; return; }
+  if (!confirm('파일에 저장된 설정·데이터로 서버의 모든 저장값(세부기준, 등록교과, 검수이력 등)을 덮어씁니다. 계속할까요?')) { ev.target.value = ''; return; }
   const reader = new FileReader();
   reader.onload = () => {
     try {
@@ -273,12 +275,12 @@ function importAllData(ev) {
       let count = 0;
       allStorageKeys().forEach(k => {
         if (Object.prototype.hasOwnProperty.call(data, k)) {
-          localStorage.setItem(k, data[k]);
+          AppStorage.setItem(k, data[k]);
           count++;
         }
       });
       toast(`데이터를 불러왔습니다 (${count}개 항목). 화면을 새로고침합니다.`);
-      setTimeout(() => location.reload(), 800);
+      ((window.FirebaseSync && FirebaseSync.flush) ? FirebaseSync.flush() : Promise.resolve()).then(() => location.reload());
     } catch (e) {
       toast('파일을 읽는 데 실패했습니다. 올바른 백업 파일인지 확인해주세요.');
     } finally {
@@ -288,24 +290,24 @@ function importAllData(ev) {
   reader.readAsText(file);
 }
 const SimpleListStore = {
-  all(type) { try { return JSON.parse(localStorage.getItem(SIMPLE_LIST_TYPES[type].storeKey)) || {}; } catch { return {}; } },
+  all(type) { try { return JSON.parse(AppStorage.getItem(SIMPLE_LIST_TYPES[type].storeKey)) || {}; } catch { return {}; } },
   // 하이테크과정(voc-hitech)은 산업AI교과/AI활용교과 교과목 목록을 전문기술과정(voc-tech)과 완전히 공유한다(vocAliasKey).
   get(type, courseKey) { const saved = this.all(type)[vocAliasKey(courseKey)]; return saved || []; },
   save(type, courseKey, list) {
     const key = vocAliasKey(courseKey);
     const all = this.all(type); all[key] = list;
-    localStorage.setItem(SIMPLE_LIST_TYPES[type].storeKey, JSON.stringify(all));
+    AppStorage.setItem(SIMPLE_LIST_TYPES[type].storeKey, JSON.stringify(all));
   },
   isSet(type, courseKey) { const l = this.get(type, courseKey); return l.some(r => (r.name || '').trim()); },
 };
 const SimpleRuleStore = {
-  all(type) { try { return JSON.parse(localStorage.getItem(SIMPLE_LIST_TYPES[type].ruleKey)) || {}; } catch { return {}; } },
+  all(type) { try { return JSON.parse(AppStorage.getItem(SIMPLE_LIST_TYPES[type].ruleKey)) || {}; } catch { return {}; } },
   get(type, courseKey) {
     const saved = this.all(type)[courseKey];
     const base = (SIMPLE_RULE_COURSE_DEFAULTS[courseKey] && SIMPLE_RULE_COURSE_DEFAULTS[courseKey][type]) || SIMPLE_RULE_DEFAULT;
     return Object.assign({}, SIMPLE_RULE_DEFAULT, base, saved || {});
   },
-  save(type, courseKey, rule) { const all = this.all(type); all[courseKey] = rule; localStorage.setItem(SIMPLE_LIST_TYPES[type].ruleKey, JSON.stringify(all)); },
+  save(type, courseKey, rule) { const all = this.all(type); all[courseKey] = rule; AppStorage.setItem(SIMPLE_LIST_TYPES[type].ruleKey, JSON.stringify(all)); },
 };
 
 /* 스펙(상세) 기준값 → 검수 엔진용 평면 기준값 매핑 */
@@ -355,9 +357,10 @@ function findCourse(courseKey) {
  * ========================================================================= */
 const ADMIN_PASS_KEY = 'kpu-curri-adminpass-v1';
 const ADMIN_SESSION_KEY = 'kpu-curri-adminsession-v1';
-function getAdminPassword() { return localStorage.getItem(ADMIN_PASS_KEY) || '1234'; }
-function setAdminPassword(pw) { localStorage.setItem(ADMIN_PASS_KEY, pw); }
-function isAdmin() { return sessionStorage.getItem(ADMIN_SESSION_KEY) === '1'; }
+function getAdminPassword() { return AppStorage.getItem(ADMIN_PASS_KEY) || '1234'; }
+function setAdminPassword(pw) { AppStorage.setItem(ADMIN_PASS_KEY, pw); }
+let _adminSession = false;   // v2.0.0: 브라우저 저장 없이 메모리에서만 유지(새로고침 시 재로그인)
+function isAdmin() { return _adminSession === true; }
 let _adminPendingCallback = null;
 let _adminLoginIsStandalone = false; // 홈에서 직접 '관리자 로그인' 버튼을 눌러 연 경우(취소해도 이동 없음)
 
@@ -390,7 +393,7 @@ function submitAdminLogin() {
   const input = document.getElementById('adminPwInput');
   const val = input ? input.value : '';
   if (val === getAdminPassword()) {
-    sessionStorage.setItem(ADMIN_SESSION_KEY, '1');
+    _adminSession = true;
     document.getElementById('adminModal').style.display = 'none';
     toast('관리자 모드로 전환되었습니다.');
     updateAdminBadge();
@@ -404,7 +407,7 @@ function submitAdminLogin() {
   }
 }
 function adminLogout() {
-  sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  _adminSession = false;
   toast('관리자 모드가 종료되었습니다.');
   updateAdminBadge();
   navigate('home');
@@ -480,7 +483,9 @@ window.addEventListener('DOMContentLoaded', () => {
   $('#brandTitle').textContent = '한국폴리텍대학';
   $('#brandSub').textContent = '교과과정개편 세부기준 검수 지원 도구';
   updateAdminBadge();
-  router();
+  // v2.0.0: 서버(Firestore)에서 데이터를 모두 받아온 뒤에 화면을 그린다
+  if (window.ServerStoreReady) window.ServerStoreReady.then(() => router()).catch(() => {});
+  else router();
 });
 
 /* 상단바 노출 제어 */
@@ -877,7 +882,7 @@ function buildCriteriaList(courseKey) {
   // 교양교과 설정(교양필수교과 검수기준) — 학위과정 전용 항목이므로 전문기술과정(voc-tech)에는 노출하지 않음
   if (!isVocTimeBased(courseKey) && LiberalArtsStore.isSet(courseKey)) {
     const laRule = LiberalCheckRuleStore.get(courseKey);
-    if (laRule.checkOffered) items.push({ title: '교양필수교과 편성 여부(역량군별)', req: '설정된 필수교과가 역량군별로 모두 편성', src: '교양교과설정' });
+    if (false && laRule.checkOffered) items.push({ title: '교양필수교과 편성 여부(역량군별)', req: '설정된 필수교과가 역량군별로 모두 편성', src: '교양교과설정' });
     if (laRule.checkMaxPerGroup) items.push({ title: '교양필수교과 역량군당 편성 수', req: `역량군당 최대 ${laRule.maxPerGroup}과목`, src: '교양교과설정' });
     if (laRule.checkTotal) items.push({ title: `교양필수교과 총 편성 역량군수/${isVocTimeBased(courseKey) ? '시간' : '학점'}`, req: `${laRule.targetGroupCount}개 역량군 · ${laRule.targetTotalCredit}${isVocTimeBased(courseKey) ? '시간' : '학점'}`, src: '교양교과설정' });
   }
@@ -989,7 +994,7 @@ function laRulePanelHtml() {
   return `
     <div class="panel la-rule-panel" style="margin-bottom:16px">
       <div class="la-group-head"><h3>교양필수교과 검수기준 설정</h3></div>
-      <div class="la-rule-row">
+      <div class="la-rule-row" style="display:none">
         <label class="switch"><input type="checkbox" id="laR_checkOffered" ${r.checkOffered ? 'checked' : ''}><span class="track"></span><span class="switch-label">적용</span></label>
         <span class="la-rule-label">설정된 필수교과가 역량군별로 실제 편성되어 있는지 검수</span>
       </div>
@@ -2435,7 +2440,7 @@ function runCheck(courseKey) {
 
     if (groupInfo.length) {
       // 1) 역량군별 저장된 필수교과가 실제 편성되어 있는지
-      if (rule.checkOffered) {
+      if (false && rule.checkOffered) {   // v1.9.30 폐지
         const missing = groupInfo.filter(x => !x.offered);
         add(missing.length === 0,
             '교양필수교과 편성 여부(역량군별)',
@@ -2548,7 +2553,7 @@ function runCheck(courseKey) {
   $('#resultArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/* 검수결과를 내부 내역(localStorage)에 누적 저장 — 검수한 모든 학과의 결과를 별도 화면에서 관리 */
+/* 검수결과를 서버 내역에 누적 저장 — 검수한 모든 학과의 결과를 별도 화면에서 관리 */
 function saveCheckResultToHistory(courseKey) {
   if (!lastCheck || !lastCheck.checks) { toast('먼저 세부기준 체크를 실행하세요.'); return; }
   const info = lastCheck.info || {};
@@ -2579,12 +2584,37 @@ function saveCheckResultToHistory(courseKey) {
  * 검수결과 내역(전체 학과 누적 관리 화면)
  * ========================================================================= */
 let historyFilter = { cat: 'degree', univ: '', campus: '', series: '', verdict: '' };
-/* 검수내역 기간 검색(저장일시 기준) — 마지막 검색값을 브라우저에 기억 */
-const HIST_DATE_KEY = 'kpu-curri-histdate-v1';
+/* 검수내역 기간 검색(저장일시 기준) — 마지막 검색값을 서버에 기억 */
+const HIST_DATE_KEY = 'kpu-curri-histdate-v1';            // (구버전 공용 기간값 — 더 이상 사용하지 않음)
+/* v2.0.1 — 검수내역 검색조건(기간·판정·대학·캠퍼스·계열)을 사용자별로 서버에 저장
+ *  서버 키: kpu-curri-histfilter-v1::<사용자명>. 사용자명은 검수내역 화면에서 입력(페이지 메모리에만 유지). */
+const HIST_FILTER_PREFIX = 'kpu-curri-histfilter-v1::';
+let histUser = '';
+let _histDateMem = { from: '', to: '' };
+function histUserKey(u) { return HIST_FILTER_PREFIX + String(u).trim().replace(/[.\/#$\[\]\s]+/g, '_').slice(0, 40); }
 const HistDateStore = {
-  get() { try { return Object.assign({ from: '', to: '' }, JSON.parse(localStorage.getItem(HIST_DATE_KEY)) || {}); } catch { return { from: '', to: '' }; } },
-  set(v) { localStorage.setItem(HIST_DATE_KEY, JSON.stringify({ from: v.from || '', to: v.to || '' })); },
+  get() { return Object.assign({}, _histDateMem); },
+  set(v) { _histDateMem = { from: v.from || '', to: v.to || '' }; saveHistUserFilter(); },
 };
+function saveHistUserFilter() {
+  if (!histUser) return;
+  AppStorage.setItem(histUserKey(histUser), JSON.stringify({
+    from: _histDateMem.from, to: _histDateMem.to, verdict: historyFilter.verdict || '',
+    cat: historyFilter.cat || '', univ: historyFilter.univ || '', campus: historyFilter.campus || '', series: historyFilter.series || '',
+  }));
+}
+function setHistoryUser(name) {
+  histUser = String(name || '').trim();
+  if (histUser) {
+    let saved = null; try { saved = JSON.parse(AppStorage.getItem(histUserKey(histUser))); } catch {}
+    if (saved) {
+      _histDateMem = { from: saved.from || '', to: saved.to || '' };
+      historyFilter = { cat: saved.cat || historyFilter.cat, univ: saved.univ || '', campus: saved.campus || '', series: saved.series || '', verdict: saved.verdict || '' };
+      toast(`'${histUser}' 님의 이전 검색조건을 불러왔습니다.`);
+    } else { saveHistUserFilter(); toast(`'${histUser}' 님의 검색조건을 이제부터 서버에 저장합니다.`); }
+  }
+  renderHistory();
+}
 function setHistoryDate(field, value) {
   const d = HistDateStore.get(); d[field] = value || '';
   if (d.from && d.to && d.from > d.to) { toast('시작일이 종료일보다 늦습니다. 기간을 확인해 주세요.'); }
@@ -2637,6 +2667,7 @@ function setHistoryFilter(field, value) {
   if (field === 'cat') { historyFilter.univ = ''; historyFilter.campus = ''; historyFilter.series = ''; }
   if (field === 'univ') { historyFilter.campus = ''; historyFilter.series = ''; }
   if (field === 'campus') { historyFilter.series = ''; }
+  saveHistUserFilter();
   renderHistory();
 }
 function resetHistoryFilter() {
@@ -2645,10 +2676,12 @@ function resetHistoryFilter() {
   historyFilter.univ = '';
   historyFilter.campus = '';
   historyFilter.series = '';
+  saveHistUserFilter();
   renderHistory();
 }
 function setHistoryTab(tabKey) {
   historyFilter = { cat: tabKey, univ: '', campus: '', series: '', verdict: historyFilter.verdict || '' };
+  saveHistUserFilter();
   renderHistory();
 }
 function renderHistory() {
@@ -2746,6 +2779,14 @@ function renderHistory() {
                 <option value="">전체</option>
                 ${seriesOptions.map(s => `<option value="${esc(s)}" ${historyFilter.series === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
               </select>
+            </div>
+          </div>
+          <div class="field" style="margin:0;min-width:120px">
+            <label>사용자(검색조건 저장)</label>
+            <div class="input-wrap">
+              <input type="text" value="${esc(histUser)}" placeholder="이름 입력" style="width:110px"
+                onkeydown="if(event.key==='Enter'){this.blur();}" onchange="setHistoryUser(this.value)"
+                title="이름을 입력하면 기간·판정 등 검색조건이 사용자별로 서버에 저장되고, 다음에 같은 이름을 입력하면 불러옵니다.">
             </div>
           </div>
           <div class="field" style="margin:0;min-width:130px">
