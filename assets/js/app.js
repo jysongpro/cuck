@@ -2486,11 +2486,15 @@ function runCheck(courseKey) {
     const norm = (s) => (s || '').replace(/\s+/g, '');
     // 리포팅 표시용: 괄호(및 괄호 안 내용) 제거 — 예: '산업안전교과(50ㄱ0)' → '산업안전교과' (매칭 로직에는 영향 없음)
     const displayName = (s) => (s || '').replace(/\(.*?\)/g, '').trim();
-    const matched = rows.filter(r => names.some(n => norm(r.name).includes(norm(n))));
+    // v2.0.4: 세부기준설정에 등록된 교과명 기준 매칭 — 괄호·공백·특수기호를 제거하고 양방향 포함 비교
+    const key = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+    const regKeys = names.map(key).filter(k => k.length >= 2);
+    const matched = rows.filter(r => { const rk = key(r.name); return rk && regKeys.some(k => rk === k || rk.includes(k) || (rk.length >= 3 && k.includes(rk))); })
+      .filter((r, i, a) => a.findIndex(x => key(x.name) === key(r.name)) === i);   // 학기별 중복 행 1과목으로
     // 산업AI교과: '나.AI교과' 표의 '산업AI교과' 행(1~4학기 셀)에서 직접 추출된 교과명은
     // 등록된 50개 풀에 없어도(학과 자율편성) 편성된 것으로 인정한다.
     const tableCourses = (type === 'industrialAi' && lastNarrative && lastNarrative.industrialAiCourses) || [];
-    const alreadyCounted = (nm) => matched.some(r => norm(r.name).includes(norm(nm))) ;
+    const alreadyCounted = (nm) => matched.some(r => key(r.name).includes(key(nm)));
     const extraFromTable = tableCourses.filter(nm => !alreadyCounted(nm));
     const totalCount = matched.length + extraFromTable.length;
     const ok = totalCount >= rule.minCount;
@@ -2502,7 +2506,9 @@ function runCheck(courseKey) {
         type === 'industrialAi' ? meta.checkTitle + '(자체편성포함)' : meta.checkTitle,
         `편성된 ${meta.itemLabel}: ${totalCount}과목${matchedLabel.length ? ' (' + matchedLabel.join(', ') + ')' : ''}`,
         `최소 ${rule.minCount}과목 이상 편성`,
-        ok ? '' : `등록된 ${meta.itemLabel} 및 '나.AI교과' 표(산업AI교과 행) 확인 결과, 편성된 교과가 없거나 기준에 미달합니다. (최소 기준 ${rule.minCount}과목, 등록 과목수 ${names.length}과목)`);
+        ok ? '' : (type === 'industrialAi'
+          ? `등록된 ${meta.itemLabel} 및 '나.AI교과' 표(산업AI교과 행) 확인 결과, 편성된 교과가 없거나 기준에 미달합니다. (최소 기준 ${rule.minCount}과목, 등록 과목수 ${names.length}과목)`
+          : `세부기준설정 - ${meta.itemLabel}에 등록된 교과(${names.map(displayName).join(', ')}) 중 편성된 교과가 없거나 기준에 미달합니다. (최소 기준 ${rule.minCount}과목, 등록 과목수 ${names.length}과목)`));
   });
 
   const passCount = checks.filter(c => c.ok).length;
