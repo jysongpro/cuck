@@ -1581,7 +1581,7 @@ function roadmapStartYear(courseKey) { return courseKey === 'degree-advanced' ? 
 function parsePageRange(text) {
   const s = String(text || '').replace(/\s+/g, '');
   if (!s) return null;
-  const m = s.match(/^(\d+)\s*-\s*(\d+)$/);
+  const m = s.match(/^(\d+)\s*[-~～〜–—]\s*(\d+)$/);   // v2.0.7: '2~3' 물결표 범위 지원(직업교육과정 기본값)
   if (m) return { from: +m[1], to: +m[2] };
   const n = s.match(/^(\d+)(?:,(\d+))*$/);
   if (n) { const nums = s.split(',').map(Number); return { from: Math.min(...nums), to: Math.max(...nums) }; }

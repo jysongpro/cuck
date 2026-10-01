@@ -932,6 +932,7 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
   const summary = { groups, total: total.hours, totalInfo: total };
 
   const narrative = {};
+  if (!aiPageRange) aiPageRange = { from: 1, to: Math.min(pdf.numPages, 4) };   // v2.0.7: 페이지 미지정·형식오류 시 1~4쪽 탐색
   if (aiPageRange) {
     try {
       const fullText = await extractFullText(pdf, aiPageRange);
@@ -957,7 +958,8 @@ async function analyzeVocTech(file, locationText, aiPageRange, courseKey, trackK
     } catch (e) { console.error('[voc-tech narrative extract error]', e); }
   }
 
-  courses = mergeSplitCourseNames(courses);
+  // v2.0.7: 3자 이하 교과명 자동 병합(mergeSplitCourseNames) 미사용 — '무전해도금'+'전처리' 오병합 방지.
+  //  두 줄 교과목명은 행 단위 처리(v1.9.26/v1.9.28)에서 이미 합쳐진다.
   return { info, courses, startPage, narrative, summary };
 }
 
@@ -1091,7 +1093,6 @@ async function analyzeVocSenior(file, locationText) {
   });
   const tHours = total ? total.hours : groups.reduce((s, g) => s + g.hours, 0);
   const tNcs = total ? total.ncsHours : groups.reduce((s, g) => s + (+g.ncsHours || 0), 0);
-  const mergedCourses = mergeSplitCourseNames(courses); courses.length = 0; courses.push(...mergedCourses);
   return { info, courses, startPage, narrative: {}, summary: { groups, total: tHours, totalInfo: { hours: tHours, ncsHours: tNcs, sem1: tHours, sem2: 0, sem3: 0 } } };
 }
 
