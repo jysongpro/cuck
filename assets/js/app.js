@@ -2584,6 +2584,7 @@ function saveCheckResultToHistory(courseKey) {
     remark: '',           // 비고(검수내역 화면에서 직접 입력)
     trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
     trackLabel: courseKey === 'voc-senior' ? historyTrackLabel({ courseKey }) : '',
+    actualCredits: (() => { const c = lastCheck.checks.find(x => x.title === '총 편성학점'); const m = c && String(c.val).match(/(\d+(?:\.\d+)?)/); return m ? +m[1] : null; })(),   // v2.0.6 학위 편성학점
     actualHours: (isVocTimeBased(courseKey) && lastVocSummary && lastVocSummary.total != null) ? +lastVocSummary.total : null,   // v1.9.22 학과 실제 편성시간
     allPass: lastCheck.allPass,
     passCount: lastCheck.passCount,
@@ -2631,6 +2632,12 @@ function historyActualHours(r) {
   const c = (r.checks || []).find(x => /총\s*(편성|운영)\s*시간/.test(x.title || ''));
   const m = c && String(c.val || '').match(/(\d{2,4})\s*h/);
   return m ? +m[1] : null;
+}
+/* v2.0.6 — 학위과정 검수내역 편성학점: 저장값 → 과거 건은 검수항목 '총 편성학점' 값에서 추출 */
+function historyCreditLabel(r) {
+  let v = (r.actualCredits != null && r.actualCredits !== '') ? +r.actualCredits : null;
+  if (v == null) { const c = (r.checks || []).find(x => /총\s*편성\s*학점/.test(x.title || '')); const m = c && String(c.val || '').match(/(\d+(?:\.\d+)?)/); if (m) v = +m[1]; }
+  return v == null ? '-' : `${v}학점`;
 }
 function historyTrackLabel(r) {
   if (typeof isVocTimeBased === 'function' && isVocTimeBased(r.courseKey) && r.checks) {
@@ -2703,7 +2710,7 @@ function renderHistory() {
       <td>${esc(r.info.계열 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
       <td>${esc(r.info.전공 || '-')}</td>
-      ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : ''}
+      ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : `<td>${esc(historyCreditLabel(r))}</td>`}
       <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
       <td class="td-qual"><input type="text" class="hist-qual" value="${esc(r.qualName || '')}" placeholder="${r.pathwayEval ? '자격명 입력' : '-'}" ${r.pathwayEval ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','qualName',this.value.trim())" title="${esc(r.qualName || '과정평가형 자격명')}"></td>
       <td>${esc(r.savedAt)}</td>
@@ -2804,7 +2811,7 @@ function renderHistory() {
         <div class="panel hist-table-wrap">
           <table class="vtable hist-table">
             <thead><tr>
-              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : ''}
+              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : '<th class="col-track">편성학점</th>'}
               <th class="col-pathway">과정평가형</th><th class="col-qual">자격명</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>
@@ -2865,7 +2872,7 @@ function exportHistoryToExcel(mode) {
   if (!list.length) { toast(filtered ? '조회된 검수내역이 없습니다. 검색조건을 확인해 주세요.' : `${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
     ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고']
-    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
+    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '편성학점', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
       i + 1,
@@ -2875,7 +2882,7 @@ function exportHistoryToExcel(mode) {
       r.info.계열 || '',
       r.info.학과 || '',
       r.info.전공 || '',
-      ...(tabKey === 'vocational' ? [historyTrackLabel(r)] : []),
+      tabKey === 'vocational' ? historyTrackLabel(r) : historyCreditLabel(r),
       r.pathwayEval ? 'Y' : '',
       r.qualName || '',
       r.savedAt || '',
