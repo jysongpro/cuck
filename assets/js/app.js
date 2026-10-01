@@ -2691,14 +2691,7 @@ function renderHistory() {
 
   /* ---- 필터 적용 ---- */
   const hDate = HistDateStore.get();
-  const list = tabScope.filter(r =>
-    (!historyFilter.univ || r.info.대학 === historyFilter.univ) &&
-    (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus) &&
-    (!historyFilter.series || r.info.계열 === historyFilter.series) &&
-    (!historyFilter.verdict || (historyFilter.verdict === 'pass' ? r.allPass : !r.allPass)) &&
-    (!hDate.from || String(r.savedAt || '').slice(0, 10) >= hDate.from) &&
-    (!hDate.to || String(r.savedAt || '').slice(0, 10) <= hDate.to)
-  );
+  const list = applyHistoryFilter(tabScope);
 
   const rows = list.map((r, i) => `
     <tr>
@@ -2801,11 +2794,13 @@ function renderHistory() {
         <div class="toolbar" style="margin-bottom:10px">
           <button class="btn btn-ghost btn-sm" onclick="toggleAllHistory(this)">전체 선택/해제</button>
           <button class="btn btn-danger btn-sm" onclick="deleteHistorySelected()">${ICON.no} 선택 삭제</button>
-          <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel()">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
+          <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel('filtered')">${ICON.set || ''} 조회 목록 엑셀로 저장 (${list.length}건)</button>
+          <button class="btn btn-soft btn-sm" onclick="exportHistoryToExcel('all')">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
           <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·비고는 관리자가, 과정평가형·자격명은 누구나 표에서 직접 입력·수정할 수 있습니다.</span>
         </div>` : `
         <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
-          <div>검수결과 보기만 가능합니다. 삭제·엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div></div>`}
+          <div style="flex:1">검수결과 조회와 조회 목록 엑셀 저장이 가능합니다. 삭제·전체 목록 엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div>
+          <button class="btn btn-primary btn-sm" style="margin-left:10px;white-space:nowrap" onclick="exportHistoryToExcel('filtered')">${ICON.set || ''} 조회 목록 엑셀로 저장 (${list.length}건)</button></div>`}
         <div class="panel hist-table-wrap">
           <table class="vtable hist-table">
             <thead><tr>
@@ -2839,11 +2834,35 @@ function updateHistoryField(id, field, value) {
 }
 
 /* 검수내역 전체 목록을 엑셀(.xls, HTML 표 기반 — 별도 라이브러리 없이 오프라인에서도 엑셀로 정상 열림)로 내보낸다 */
-function exportHistoryToExcel() {
-  if (!isAdmin()) { toast('엑셀 내려받기는 관리자만 이용할 수 있습니다.'); return; }
+/* v2.0.5 — 검수내역 화면의 현재 검색조건(대학·캠퍼스·계열·판정·기간)을 적용한 목록 */
+function applyHistoryFilter(tabScope) {
+  const hDate = HistDateStore.get();
+  return tabScope.filter(r =>
+    (!historyFilter.univ || r.info.대학 === historyFilter.univ) &&
+    (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus) &&
+    (!historyFilter.series || r.info.계열 === historyFilter.series) &&
+    (!historyFilter.verdict || (historyFilter.verdict === 'pass' ? r.allPass : !r.allPass)) &&
+    (!hDate.from || String(r.savedAt || '').slice(0, 10) >= hDate.from) &&
+    (!hDate.to || String(r.savedAt || '').slice(0, 10) <= hDate.to)
+  );
+}
+function historyFilterLabel() {
+  const d = HistDateStore.get(), parts = [];
+  if (historyFilter.univ) parts.push(historyFilter.univ);
+  if (historyFilter.campus) parts.push(historyFilter.campus);
+  if (historyFilter.series) parts.push(historyFilter.series);
+  if (historyFilter.verdict) parts.push(historyFilter.verdict === 'pass' ? '적합' : '부적합');
+  if (d.from || d.to) parts.push(`${(d.from || '').replace(/-/g, '')}~${(d.to || '').replace(/-/g, '')}`);
+  return parts.join('_');
+}
+/* mode: 'filtered'(조회 목록 — 모든 사용자) | 'all'(탭 전체 — 관리자) */
+function exportHistoryToExcel(mode) {
+  const filtered = mode === 'filtered';
+  if (!filtered && !isAdmin()) { toast('전체 목록 엑셀 내려받기는 관리자만 이용할 수 있습니다.'); return; }
   const tabKey = historyFilter.cat || Object.keys(PROGRAM_TREE)[0];
-  const list = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
-  if (!list.length) { toast(`${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
+  const scope = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
+  const list = filtered ? applyHistoryFilter(scope) : scope;
+  if (!list.length) { toast(filtered ? '조회된 검수내역이 없습니다. 검색조건을 확인해 주세요.' : `${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
     ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고']
     : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
@@ -2874,7 +2893,8 @@ function exportHistoryToExcel() {
   const a = document.createElement('a');
   const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
   a.href = url;
-  a.download = `CurriculumChecker-검수내역-${PROGRAM_TREE[tabKey].title}-${ts}.xls`;
+  const fl = filtered ? historyFilterLabel() : '';
+  a.download = `CurriculumChecker-검수내역-${PROGRAM_TREE[tabKey].title}-${filtered ? '조회목록' + (fl ? '-' + fl : '') : '전체'}-${ts}.xls`.replace(/[\\/:*?"<>|\s]+/g, '_');
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
