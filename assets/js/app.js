@@ -1955,9 +1955,10 @@ function runVocTechCheck(courseKey) {
   const aiAppliedNames = SimpleListStore.get('aiApplied', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
   const industrialAiNames = SimpleListStore.get('industrialAi', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
   const industrialAiTableNames = (lastNarrative && lastNarrative.industrialAiCourses) || [];
-  const aiAppliedCourse = courses.find(c => aiAppliedNames.some(n => norm(c.name).includes(norm(n))))
+  // v2.0.16: 등록된 "AI활용교과/산업AI교과 설정" 목록과는 완전일치만 인정(부분일치 제거). 등록이 없을 때의 패턴 보조 판단과 PDF 표 추출값(industrialAiTableNames)은 기존대로 유지.
+  const aiAppliedCourse = courses.find(c => aiAppliedNames.some(n => norm(c.name) === norm(n)))
     || courses.find(c => /AI/i.test(c.name) && /활용|적용/.test(c.name));   // 설정이 없으면 교과명 패턴으로만 보조 판단
-  const industrialAiCourse = courses.find(c => industrialAiNames.some(n => norm(c.name).includes(norm(n))))
+  const industrialAiCourse = courses.find(c => industrialAiNames.some(n => norm(c.name) === norm(n)))
     || courses.find(c => industrialAiTableNames.some(n => norm(c.name).includes(norm(n))))
     || courses.find(c => /산업\s*AI/i.test(c.name));
 
@@ -2034,7 +2035,8 @@ function runVocTechCheck(courseKey) {
     }
     if (cl.c_aiApplied) {
       const pool = aiAppliedNames.length ? aiAppliedNames : AI_APPLIED_POOL_2027;
-      const ai = courses.filter(c => pool.some(n => norm(c.name).includes(norm(n)))).sort((a, b) => b.semTotal - a.semTotal);
+      // v2.0.16: 등록(또는 기본) 풀과 완전일치하는 교과만 AI활용교과로 인정
+      const ai = courses.filter(c => pool.some(n => norm(c.name) === norm(n))).sort((a, b) => b.semTotal - a.semTotal);
       const best = ai[0], need = std.aiAppliedHours || 20;
       const ok = !!best && best.semTotal >= need && best.gwan === '특화전공';
       add(ok, 'AI활용교과 편성', best ? ai.map(c => `${c.name} ${c.semTotal}h(${c.gwan})`).join(', ') : '미편성',
@@ -2354,17 +2356,19 @@ function runCheck(courseKey) {
       `과목당 ${std.courseCreditMin}~${std.courseCreditMax}학점`,
       badCourses.length ? `기준 외 과목: ${badCourses.map(c => c.name).join(', ')}` : '모든 과목 적합');
 
-  // v2.0.14: 4학점 이상 개설 교과목수(융합프로젝트실습 교과 제외) — 기준 이내(과정평가형 체크 시 상한 미적용)
-  if (std.over3Allow !== undefined && std.over3Allow !== null) {
+  // v2.0.15: 4학점 이상 개설 교과목수(융합프로젝트실습 교과 제외) — 기준 이내(과정평가형 체크 시 상한 미적용)
+  // 과거 저장된 세부기준설정에 over3Allow 키가 없을 수 있으므로 기본값 2로 폴백(가드로 인해 항목 자체가 누락되는 문제 수정)
+  {
+    const over3AllowVal = (std.over3Allow !== undefined && std.over3Allow !== null) ? std.over3Allow : 2;
     const isPathwayChecked = !!document.getElementById('savePathway')?.checked;
     const CONVERGE_NAMES = courseKey === 'degree-advanced'
       ? ['전공프로젝트실습1', '전공프로젝트실습2']
       : ['융합프로젝트실습1', '융합프로젝트실습2'];
     const over4Courses = rows.filter(r => r.credit >= 4 && !CONVERGE_NAMES.includes(r.name.replace(/\s+/g, '')));
-    const over4Ok = isPathwayChecked || over4Courses.length <= std.over3Allow;
+    const over4Ok = isPathwayChecked || over4Courses.length <= over3AllowVal;
     add(over4Ok,
         '4학점이상 개설 교과목수(융합프로젝트실습 제외)', over4Courses.length + '개',
-        isPathwayChecked ? `${std.over3Allow}개 이내(과정평가형 체크로 제한 없음)` : `${std.over3Allow}개 이내`,
+        isPathwayChecked ? `${over3AllowVal}개 이내(과정평가형 체크로 제한 없음)` : `${over3AllowVal}개 이내`,
         over4Ok ? '' : `4학점 이상 과목: ${over4Courses.map(c => c.name).join(', ')}`);
   }
 
@@ -2562,7 +2566,8 @@ function runCheck(courseKey) {
     const matched = rows.filter(r => {
       const rk = key(r.name);
       if (!rk) return false;
-      return type === 'safety' ? regKeys.includes(rk) : regKeys.some(k => rk === k || rk.includes(k) || (rk.length >= 3 && k.includes(rk)));
+      // v2.0.16: safety/industrialAi/aiApplied 모두 등록된 교과명과 완전일치하는 경우만 인정(부분일치 제거)
+      return regKeys.includes(rk);
     })
       .filter((r, i, a) => a.findIndex(x => key(x.name) === key(r.name)) === i);   // 학기별 중복 행 1과목으로
     // 산업AI교과: '나.AI교과' 표의 '산업AI교과' 행(1~4학기 셀)에서 직접 추출된 교과명은
