@@ -1458,6 +1458,13 @@ function renderCheck(courseKey) {
                 <input type="text" id="pdfAiPages" value="${isVocTimeBased(courseKey) ? '2~3' : '3'}" placeholder="예: 12 또는 12-14, 비우면 전체">
               </div>
             </div>
+            ${!isVocTimeBased(courseKey) ? `
+            <div class="field" style="flex:0 0 auto;margin:0">
+              <label class="pathway-save" title="과정평가형으로 운영하는 경우 체크하고 자격명을 입력하세요" style="margin:0;white-space:nowrap">
+                <input type="checkbox" id="savePathway" onchange="document.getElementById('saveQual').disabled=!this.checked"> 과정평가형
+                <input type="text" id="saveQual" placeholder="자격명 입력" disabled style="width:150px">
+              </label>
+            </div>` : ''}
             <button class="btn btn-primary" id="analyzeBtn" onclick="runRoadmapAnalyze('${courseKey}')" disabled>${ICON.check} 교과과정 읽어오기</button>
           </div>
           <div id="analyzeMsg"></div>
@@ -2605,10 +2612,6 @@ function runCheck(courseKey) {
     </div>
 
     <div class="toolbar" style="margin:16px 0 4px">
-      <label class="pathway-save" title="과정평가형으로 운영하는 경우 체크하고 자격명을 입력하세요">
-        <input type="checkbox" id="savePathway" ${(courseKey === 'voc-hitech' && lastVocPathway) ? 'checked' : ''} onchange="document.getElementById('saveQual').disabled=!this.checked"> 과정평가형
-        <input type="text" id="saveQual" placeholder="자격명 입력" ${(courseKey === 'voc-hitech' && lastVocPathway) ? '' : 'disabled'} style="width:150px">
-      </label>
       <button class="btn btn-soft" onclick="saveCheckResultToHistory('${courseKey}')">${ICON.check} 검수결과 저장</button>
       <button class="btn btn-soft" onclick="saveCheckResult('${courseKey}')">${ICON.upload} 검수결과 저장(CSV)</button>
       <button class="btn btn-primary" onclick="openPrintPreview('${courseKey}')">${ICON.book} 검수결과 출력하기</button>
