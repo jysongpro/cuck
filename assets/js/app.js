@@ -2791,10 +2791,10 @@ function renderHistory() {
       <td>${esc(r.savedAt)}</td>
       <td class="td-verdict"><span class="chip ${r.allPass ? 'chip-ok' : 'chip-no'}">${r.allPass ? '적합' : '부적합'}</span></td>
       <td>${r.passCount}/${r.total}</td>
-      <td class="l">${isAdmin() ? `<input type="text" class="hist-inline-input" data-id="${r.id}" data-field="remark" value="${esc(r.remark || '')}" placeholder="비고 입력" onchange="updateHistoryField('${r.id}','remark',this.value)">` : esc(r.remark || '-')}</td>
+      <td class="l"><input type="text" class="hist-inline-input" data-id="${r.id}" data-field="remark" value="${esc(r.remark || '')}" placeholder="비고 입력" onchange="updateHistoryField('${r.id}','remark',this.value)"></td>
       <td>
         <button class="btn btn-ghost btn-sm" onclick="navigate('history/${r.id}')">보기</button>
-        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="deleteHistoryOne('${r.id}')">삭제</button>` : ''}
+        <button class="btn btn-ghost btn-sm" onclick="deleteHistoryOne('${r.id}')">삭제</button>
       </td>
     </tr>`).join('');
 
@@ -2878,7 +2878,7 @@ function renderHistory() {
           <button class="btn btn-danger btn-sm" onclick="deleteHistorySelected()">${ICON.no} 선택 삭제</button>
           <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel('filtered')">${ICON.set || ''} 조회 목록 엑셀로 저장 (${list.length}건)</button>
           <button class="btn btn-soft btn-sm" onclick="exportHistoryToExcel('all')">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
-          <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·비고는 관리자가, 과정평가형·자격명은 누구나 표에서 직접 입력·수정할 수 있습니다.</span>
+          <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학은 관리자가, 과정평가형·자격명·비고는 누구나 표에서 직접 입력·수정하고, 개별 항목 삭제도 로그인 없이 가능합니다.</span>
         </div>` : `
         <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
           <div style="flex:1">검수결과 조회와 조회 목록 엑셀 저장이 가능합니다. 삭제·전체 목록 엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div>
@@ -2898,8 +2898,8 @@ function renderHistory() {
 
 /* 검수내역 표에서 직접 수정하는 필드(대학·과정평가형·비고)를 저장 */
 function updateHistoryField(id, field, value) {
-  // v2.0.3: 과정평가형·자격명은 모든 사용자가 수정 가능, 그 외 필드는 관리자만
-  if (!isAdmin() && field !== 'pathwayEval' && field !== 'qualName') { toast('수정은 관리자만 이용할 수 있습니다.'); renderHistory(); return; }
+  // v2.0.17: 과정평가형·자격명·비고는 로그인 없이도 모든 사용자가 수정 가능, 그 외 필드(대학 등)는 관리자만
+  if (!isAdmin() && !['pathwayEval', 'qualName', 'remark'].includes(field)) { toast('수정은 관리자만 이용할 수 있습니다.'); renderHistory(); return; }
   const r = HistoryStore.get(id);
   if (!r) return;
   if (field === '대학') {
@@ -2991,7 +2991,7 @@ function toggleAllHistory(btn) {
 }
 
 function deleteHistoryOne(id) {
-  if (!isAdmin()) { toast('삭제는 관리자만 이용할 수 있습니다.'); return; }
+  // v2.0.17: 개별 항목 삭제는 로그인 없이도 가능
   if (!confirm('이 검수결과 내역을 삭제하시겠습니까?')) return;
   HistoryStore.remove([id]);
   toast('삭제했습니다.');
