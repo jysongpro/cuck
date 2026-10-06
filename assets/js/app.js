@@ -1976,4 +1976,1225 @@ function runVocTechCheck(courseKey) {
     if (r.gwan === '계열공통' || r.gwan === '특화전공') a.practice += r.semHours;
     if (r.gwan === '계열공통') a.seriesCommon += r.semHours;
   });
-  const semRatio = (pa
+  const semRatio = (part, total) => total ? Math.round(part / total * 1000) / 10 : 0;
+
+  const checks = [];
+  const add = (ok, title, val, req, detail = '') => checks.push({ ok, title, val, req, detail });
+
+  // v1.9.9 — 중장년특화장기과정(voc-senior) 전용 검수 (2027 세부기준, 학기 구분 없음 · PDF "바. 교과목 구성" 소계/총계 기준)
+  if (courseKey === 'voc-senior') {
+    const lo = std.totalHoursMin || 480, hi = std.totalHoursMax || 576;
+    if (cl.c_totalRange) add(totalHours >= lo && totalHours <= hi, '총 편성시간', totalHours + 'h', `${lo}~${hi}h`,
+        (totalHours >= lo && totalHours <= hi) ? '' : `총 편성시간 ${totalHours}h가 기준 범위를 벗어났습니다.`);
+    if (cl.c_ratio) {
+      const pLo = std.practiceRatio - std.ratioTolerance, pHi = std.practiceRatio + std.ratioTolerance;
+      const ok = practiceRatioCalc >= pLo && practiceRatioCalc <= pHi;
+      add(ok, '이론:실습 비율', `이론 ${theoryRatioCalc}% : 실습 ${practiceRatioCalc}% (이론${theoryHours}h/실습${practiceHours}h)`,
+          `실습 ${pLo}~${pHi}% (이론=교양교과+기초기술, 실습=계열공통+특화전공)`, ok ? '' : '실습 비율이 기준 범위를 벗어났습니다.');
+    }
+    if (cl.c_courseMax) add(overMaxCourses.length === 0, '과목당 편성시간(NCS 제외)', overMaxCourses.length + '개 과목 초과', `≤ ${std.courseHoursMax}h`,
+        overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
+    const unitsOf = (c) => (curriculumRows.find(r => (r.name || '').trim() === c.name) || {}).units || [];
+    if (cl.c_ncsPerCourse) {
+      const max = std.ncsPerCourseMax || 4;
+      const bad = courses.filter(c => unitsOf(c).length > max);
+      add(!bad.length, '교과당 NCS 능력단위 수', bad.length ? bad.map(c => `${c.name}(${unitsOf(c).length}개)`).join(', ') : '모두 기준 이내', `≤ ${max}개`,
+          bad.length ? '능력단위가 기준 개수를 초과한 교과가 있습니다.' : '');
+    }
+    if (cl.c_ncsDup) {
+      const seenU = {}, dup = [];
+      courses.forEach(c => unitsOf(c).forEach(u => { if (seenU[u] && seenU[u] !== c.name) dup.push(`${u}(${seenU[u]}·${c.name})`); else seenU[u] = c.name; }));
+      add(!dup.length, 'NCS 능력단위 중복 편성', dup.length ? dup.join(', ') : '중복 없음', '중복 편성 불가', dup.length ? '동일 능력단위가 2개 이상 교과에 편성되었습니다.' : '');
+    }
+    if (cl.c_seniorLiberal) {
+      const re = courses.find(c => norm(c.name).includes('재취업컨설팅'));
+      const ok = !!re && re.semTotal >= (std.liberalHours || 20) && re.gwan === '교양교과';
+      add(ok, '교양교과「재취업컨설팅」', re ? `${re.semTotal}h (${re.gwan || '구분 미확인'})` : '미편성',
+          `교양교과 ≥ ${std.liberalHours}h (필수 교수요목: 사회적경제기업 2h, 양성평등및성인지 2h)`,
+          !re ? '「재취업컨설팅」 교과를 찾지 못했습니다.' : (re.gwan !== '교양교과' ? '교양교과에 편성되어야 합니다.' : (ok ? '' : '편성시간이 기준에 미달합니다.')));
+    }
+    if (cl.c_seriesCommon) {
+      const ok = seriesCommonRatio >= std.seriesCommonRatioMin && seriesCommonRatio <= std.seriesCommonRatioMax;
+      add(ok, '계열공통교과 비율', `${seriesCommonRatio}% (${seriesCommonHours}h/총 ${totalHours}h)`, `${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
+          ok ? '' : '계열공통교과 비율이 기준 범위를 벗어났습니다.');
+    }
+    if (cl.c_seniorSafety) {
+      // v2.0.8: "산업안전" 단어 포함 폴백을 제거하고, 등록된 리스트와 완전일치하는 교과만 인정한다.
+      const safetyNamesRaw0 = SimpleListStore.get('safety', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+      const safetyNames = safetyNamesRaw0.length ? safetyNamesRaw0 : SAFETY_POOL_DEFAULT;
+      const safetySeniorKey = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+      const safetySeniorKeys = safetyNames.map(safetySeniorKey).filter(k => k.length >= 2);
+      const sc = courses.filter(c => safetySeniorKeys.includes(safetySeniorKey(c.name)));
+      const sum = sc.reduce((a, c) => a + c.semTotal, 0);
+      const badGroup = sc.filter(c => !['기초기술', '특화전공'].includes(c.gwan));
+      const need = std.safetyHours || 10;
+      add(sc.length > 0 && sum >= need && !badGroup.length, '산업안전교과 편성',
+          sc.length ? `${sum}h (${sc.map(c => `${c.name}/${c.gwan}`).join(', ')})` : '미편성', `≥ ${need}h, 기초기술 또는 특화전공`,
+          !sc.length ? '산업안전 교과를 찾지 못했습니다.' : (badGroup.length ? '기초기술/특화전공 외 구분에 편성되었습니다.' : (sum < need ? '편성시간이 기준에 미달합니다.' : '')));
+    }
+    if (cl.c_aiApplied) {
+      const pool = aiAppliedNames.length ? aiAppliedNames : AI_APPLIED_POOL_2027;
+      const ai = courses.filter(c => pool.some(n => norm(c.name).includes(norm(n)))).sort((a, b) => b.semTotal - a.semTotal);
+      const best = ai[0], need = std.aiAppliedHours || 20;
+      const ok = !!best && best.semTotal >= need && best.gwan === '특화전공';
+      add(ok, 'AI활용교과 편성', best ? ai.map(c => `${c.name} ${c.semTotal}h(${c.gwan})`).join(', ') : '미편성',
+          `AI활용 Pool 9개 중 1개 이상, ≥ ${need}h, 특화전공`,
+          !best ? 'AI활용 Pool 교과를 찾지 못했습니다.' : (best.gwan !== '특화전공' ? '특화전공교과에 편성해야 합니다.' : (best.semTotal < need ? '편성시간이 기준에 미달합니다.' : '')));
+    }
+    if (cl.c_industrialAi) add(!!industrialAiCourse, '산업AI교과 편성(선택)',
+        industrialAiCourse ? `편성됨 (${industrialAiCourse.name}, ${industrialAiCourse.semTotal}h)` : '미편성', '특화전공 자율 편성',
+        industrialAiCourse ? '' : '산업AI교과 설정 목록과 일치하는 교과가 없습니다.');
+    vocCourseRuleChecks(courseKey, rows, courses).forEach(c => add(c.ok, c.title, c.val, c.req, c.detail));
+    renderCheckResult(courseKey, checks);
+    return;
+  }
+
+  if (cl.c_totalHours) add(totalHours === std.totalHours, '총 편성시간', totalHours + 'h', std.totalHours + 'h',
+      totalHours !== std.totalHours ? `실제 편성 ${totalHours}h (기준 ${std.totalHours}h)` : '');
+  if (cl.c_ratio) {
+    const practiceOk = practiceRatioCalc >= (std.practiceRatio - std.ratioTolerance) && practiceRatioCalc <= (std.practiceRatio + std.ratioTolerance);
+    add(practiceOk, '이론:실습 비율', `이론 ${theoryRatioCalc}% : 실습 ${practiceRatioCalc}% (이론${theoryHours}h/실습${practiceHours}h)`,
+        `실습 ${std.practiceRatio - std.ratioTolerance}~${std.practiceRatio + std.ratioTolerance}% (이론=교양교과+기초기술, 실습=계열공통+특화전공)`,
+        practiceOk ? '' : `실습 비율이 기준 범위를 벗어났습니다 (실제 ${practiceRatioCalc}%).`);
+  }
+  if (cl.c_major) add(majorRatio >= std.majorRatioMin, '전공교과(기초기술+계열공통+특화전공) 비율', majorRatio + '%', `≥ ${std.majorRatioMin}%`,
+      majorRatio < std.majorRatioMin ? `전공교과 ${majorHours}h / 총 ${totalHours}h` : '');
+  if (cl.c_courseMax) add(overMaxCourses.length === 0, '과목당 편성시간(NCS 제외)', overMaxCourses.length + '개 과목 초과', `≤ ${std.courseHoursMax}h`,
+      overMaxCourses.length ? `초과 과목: ${overMaxCourses.map(c => `${c.name}(${c.semTotal - c.ncsHours}h)`).join(', ')}` : '');
+  if (cl.c_split) add(splitCourses.length === 0, '1개 교과 2개 학기 분할 편성 금지', splitCourses.length + '개 과목 위반', '분할 편성 금지',
+      splitCourses.length ? `분할 편성된 과목: ${splitCourses.map(c => c.name).join(', ')}` : '');
+  // v1.9.6: 하이테크과정에서 교양교과가 편성된 경우 → 과정평가형 운영학과로 보고 체크리스트에 정보 항목으로 표시
+  if (courseKey === 'voc-hitech' && liberalHours > 0) {
+    add(true, '교양교과 편성(과정평가형)', `${liberalHours}h 편성 (${liberalCourses.map(c => c.name).filter((v, i, a) => a.indexOf(v) === i).join(', ')})`,
+        '과정평가형 운영학과만 편성 가능', '교양교과가 편성되어 과정평가형 운영학과로 분류됩니다.');
+    lastVocPathway = true;
+  } else if (courseKey === 'voc-hitech') lastVocPathway = false;
+  if (cl.c_liberal && courseKey !== 'voc-hitech') {   // v1.9.4: 하이테크과정은 교양교과 검수항목 삭제(교양교과는 선택 편성)
+    if (std.liberalAllowed === false) {
+      // 하이테크과정 등: 원칙적으로 교양교과 편성 불가(과정평가형자격 운영학과는 세부기준에서 liberalAllowed를 true로 바꿔 예외 적용)
+      const ok = liberalHours === 0;
+      add(ok, '교양교과 편성 여부', ok ? '미편성(정상)' : `${liberalHours}h 편성됨`, '편성 불가(과정평가형자격 예외)',
+          ok ? '' : '원칙적으로 교양교과는 편성할 수 없습니다(과정평가형자격 운영학과만 예외).');
+    } else {
+      add(liberalHours >= std.liberalHours && hasJikupSahoe && hasGeongang,
+          '교양교과 편성시간·필수교과', `${liberalHours}h / 직업과사회 ${hasJikupSahoe ? 'O' : 'X'} / 건강과능력개발 ${hasGeongang ? 'O' : 'X'}`,
+          `≥ ${std.liberalHours}h (직업과사회+건강과능력개발 필수 포함)`,
+          (!hasJikupSahoe || !hasGeongang) ? '필수 교양교과 미편성' : (liberalHours < std.liberalHours ? '교양교과 총 편성시간 부족' : ''));
+    }
+  }
+  if (cl.c_seriesCommon) add(seriesCommonRatio >= std.seriesCommonRatioMin && seriesCommonRatio <= std.seriesCommonRatioMax,
+      '계열공통교과 비율', seriesCommonRatio + '%', `${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
+      `계열공통 ${seriesCommonHours}h / 총 ${totalHours}h`);
+  if (cl.c_project) add(projectRatio >= std.projectRatioMin && projectRatio <= std.projectRatioMax,
+      '프로젝트실습 비율', `${projectRatio}% (${projectHours}h / 총 ${totalHours}h)`, `${std.projectRatioMin}~${std.projectRatioMax}%`,
+      projectCourses.length ? `해당 교과: ${projectCourses.map(c => c.name).join(', ')}` : '「프로젝트실습」 포함 교과명을 찾지 못했습니다.');
+  if (cl.c_capstone) add(!!capstoneCourse && capstoneCourse.semTotal >= std.capstoneHours, '종합실습 편성시간',
+      capstoneCourse ? capstoneCourse.semTotal + 'h' : '미편성', `≥ ${std.capstoneHours}h`,
+      !capstoneCourse ? '「종합실습」 교과를 찾지 못했습니다.' : '');
+  if (cl.c_safety) {
+    const safetyOk = safetyCourses.length > 0 && safetyHoursSum >= (std.safetyHours || 0) && !safetySemesters.has('1');
+    add(safetyOk, '산업안전교과 편성',
+        safetyCourses.length ? `${safetyHoursSum}h(${safetyCourses.map(c => c.name).join(', ')}, ${[...safetySemesters].join(',') || '-'}학기)` : '미편성',
+        `≥ ${std.safetyHours || 16}h, 2학기만 허용`,
+        !safetyCourses.length ? '「산업안전」 교과를 찾지 못했습니다.' : (safetySemesters.has('1') ? '1학기 편성은 허용되지 않습니다.' : (safetyHoursSum < (std.safetyHours || 0) ? '편성시간이 기준에 미달합니다.' : '')));
+  }
+  if (cl.c_aiApplied) add(!!aiAppliedCourse, 'AI활용교과 편성여부',
+      aiAppliedCourse ? `편성됨 (${aiAppliedCourse.name}, ${aiAppliedCourse.semTotal}h)` : '미편성', 'AI활용 교과풀(9개 교과)내 교과 편성',
+      !aiAppliedCourse ? 'AI활용교과 설정에 등록된 교과명이 실제 편성된 교과목에서 발견되지 않았습니다.' : '');
+  if (cl.c_industrialAi) add(!!industrialAiCourse, '산업AI교과 편성여부',
+      industrialAiCourse ? `편성됨 (${industrialAiCourse.name}, ${industrialAiCourse.semTotal}h)` : '미편성', '계열별 50개 교과풀 또는 학과 자체 편성',
+      !industrialAiCourse ? '산업AI교과 설정 목록에도, PDF 2~3페이지 AI교과표 산업AI교과 행에도 해당하는 교과를 찾지 못했습니다.' : '');
+
+  // 융합모듈제(하이테크과정 600h 트랙) 전용 5개 학기별 검수 항목 — 요청하신 우선 적용 조건
+  if (cl.c_semHours) {
+    const tol = std.semHoursTolerance || 10;
+    const target = std.semHoursTarget || 600;
+    const lo = target * (1 - tol / 100), hi = target * (1 + tol / 100);
+    const sem1Ok = semAgg['1'].total >= lo && semAgg['1'].total <= hi;
+    const sem2Ok = semAgg['2'].total >= lo && semAgg['2'].total <= hi;
+    add(sem1Ok && sem2Ok, '학기별 운영시간(600h ±10%)',
+        `1학기 ${semAgg['1'].total}h / 2학기 ${semAgg['2'].total}h`, `학기당 ${Math.round(lo)}~${Math.round(hi)}h`,
+        (sem1Ok && sem2Ok) ? '' : `${!sem1Ok ? '1학기' : ''}${(!sem1Ok && !sem2Ok) ? ', ' : ''}${!sem2Ok ? '2학기' : ''} 편성시간이 기준 범위를 벗어났습니다.`);
+  }
+  if (cl.c_semRatio) {
+    const tol = std.ratioTolerance || 10;
+    const target = std.practiceRatio || 80;
+    const lo = target - tol, hi = target + tol;
+    const sem1Practice = semRatio(semAgg['1'].practice, semAgg['1'].theory + semAgg['1'].practice);
+    const sem2Practice = semRatio(semAgg['2'].practice, semAgg['2'].theory + semAgg['2'].practice);
+    const sem1Ok = sem1Practice >= lo && sem1Practice <= hi;
+    const sem2Ok = sem2Practice >= lo && sem2Practice <= hi;
+    add(sem1Ok && sem2Ok, '학기별 이론:실습 비율(20:80 ±10%p)',
+        `1학기 실습 ${sem1Practice}% (이론${semAgg['1'].theory}h/실습${semAgg['1'].practice}h) / 2학기 실습 ${sem2Practice}% (이론${semAgg['2'].theory}h/실습${semAgg['2'].practice}h)`,
+        `학기별 실습 ${lo}~${hi}%`,
+        (sem1Ok && sem2Ok) ? '' : `${!sem1Ok ? '1학기' : ''}${(!sem1Ok && !sem2Ok) ? ', ' : ''}${!sem2Ok ? '2학기' : ''} 이론:실습 비율이 기준을 벗어났습니다.`);
+  }
+  if (cl.c_semSeriesCommon) {
+    const sem1Ratio = semRatio(semAgg['1'].seriesCommon, semAgg['1'].total);
+    const sem2Ratio = semRatio(semAgg['2'].seriesCommon, semAgg['2'].total);
+    const sem1Ok = sem1Ratio >= std.seriesCommonRatioMin && sem1Ratio <= std.seriesCommonRatioMax;
+    const sem2Ok = sem2Ratio >= std.seriesCommonRatioMin && sem2Ratio <= std.seriesCommonRatioMax;
+    add(sem1Ok && sem2Ok, '학기별 계열공통교과 비율',
+        `1학기 ${sem1Ratio}%(${semAgg['1'].seriesCommon}h/${semAgg['1'].total}h) / 2학기 ${sem2Ratio}%(${semAgg['2'].seriesCommon}h/${semAgg['2'].total}h)`,
+        `학기별 ${std.seriesCommonRatioMin}~${std.seriesCommonRatioMax}%`,
+        (sem1Ok && sem2Ok) ? '' : `${!sem1Ok ? '1학기' : ''}${(!sem1Ok && !sem2Ok) ? ', ' : ''}${!sem2Ok ? '2학기' : ''} 계열공통교과 비율이 기준을 벗어났습니다.`);
+  }
+  if (cl.c_semProject) {
+    const projectRatioFusion = totalHours ? Math.round(projectHours / totalHours * 1000) / 10 : 0;
+    const inRange = projectRatioFusion >= std.projectRatioMin && projectRatioFusion <= std.projectRatioMax;
+    const offeredSems = [...new Set(projectCourses.flatMap(c => [...c.sems]))];
+    const offered = offeredSems.length > 0;
+    add(inRange && offered, '프로젝트실습 비율(1·2학기 중 편성)',
+        `${projectRatioFusion}% (${projectHours}h/총 ${totalHours}h), 편성학기: ${offered ? offeredSems.join(',') : '없음'}`,
+        `전체 ${std.projectRatioMin}~${std.projectRatioMax}%, 1학기 또는 2학기 편성`,
+        (inRange && offered) ? '' : (!offered ? '「프로젝트실습」 포함 교과명을 찾지 못했습니다.' : '프로젝트실습 비율이 기준 범위를 벗어났습니다.'));
+  }
+  if (cl.c_semCapstone) {
+    const inSem2 = !!capstoneCourse && capstoneCourse.sems.has('2');
+    const hoursOk = !!capstoneCourse && capstoneCourse.semTotal >= (std.capstoneHours || 40);
+    add(inSem2 && hoursOk, '종합실습 2학기 필수 편성',
+        capstoneCourse ? `${capstoneCourse.semTotal}h(${[...capstoneCourse.sems].join(',') || '-'}학기)` : '미편성',
+        `2학기 ${std.capstoneHours || 40}h 필수`,
+        !capstoneCourse ? '「종합실습」 교과를 찾지 못했습니다.' : (!inSem2 ? '2학기 편성이 확인되지 않았습니다.' : (!hoursOk ? '편성시간이 기준에 미달합니다.' : '')));
+  }
+
+  // v1.9.7 — 교과목 편성기준(사용자 정의, 커리큘럼 체크리스트)을 하이테크/직업교육과정 적합성 세부검수에도 적용
+  vocCourseRuleChecks(courseKey, rows, courses).forEach(c => add(c.ok, c.title, c.val, c.req, c.detail));
+  renderCheckResult(courseKey, checks);
+}
+
+/* v1.9.7 — 직업교육과정(하이테크 등) 교과목 편성기준 검수
+ *  - 구분: 편성기준 선택값 "기초기술교과/계열공통교과/특화전공교과/교양교과" ↔ PDF 인식값 "기초기술/계열공통/특화전공/교양교과"를 정규화해 비교
+ *  - 학기: 교과목이 편성된 학기(1·2학기, 분할 편성 포함) 중 하나라도 해당하면 인정
+ *  - 시간: 최소/최대는 교과목 편성시간(계) 합계(시간 단위)로 비교
+ *  - 편성시만 검수, 편성여부(Y/N), 그룹(AND/OR) 결합은 학위과정과 동일 */
+function vocCourseRuleChecks(courseKey, rows, courses) {
+  const out = [];
+  const norm = (s) => String(s || '').replace(/\s+/g, '');
+  const gnorm = (s) => norm(s).replace(/교과$/, '');
+  const results = [];
+  CourseRuleStore.get(courseKey).forEach(r => {
+    if (!r.on) return;
+    const kw = norm(r.keyword || r.label);
+    if (!kw) return;
+    if (r.condOptional && !courses.some(c => norm(c.name).includes(kw))) return;
+    const gubun = (r.gubun || '').trim();
+    let pool = courses;
+    if (gubun) pool = pool.filter(c => gnorm(c.gwan) === gnorm(gubun));
+    const semSet = parseSemSpec(r.semester);
+    if (semSet) pool = pool.filter(c => [...c.sems].some(s => semSet.has(Number(s))));
+    // v2.0.8: 키워드가 '산업안전'인 규칙은 단어 포함이 아니라, "산업안전교과 설정"에 등록된 교과명과 완전일치하는 교과만 인정한다.
+    const isSafetyVocRule = kw === '산업안전' || /^산업\s*안전$/.test((r.label || r.keyword || '').trim());
+    let matched;
+    if (isSafetyVocRule) {
+      const safetyRegNamesRaw0 = SimpleListStore.get('safety', courseKey).map(x => (x.name || '').trim()).filter(Boolean);
+      const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
+      const safetyKeyFn = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+      const safetyRegKeys = safetyRegNames.map(safetyKeyFn).filter(k => k.length >= 2);
+      matched = pool.filter(c => safetyRegKeys.includes(safetyKeyFn(c.name)));
+    } else if (kw === '융합프로젝트실습') {
+      // v2.0.10: '융합프로젝트실습'은 단어 포함이 아니라 '융합프로젝트실습1', '융합프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['융합프로젝트실습1', '융합프로젝트실습2'].includes(norm(c.name)));
+    } else if (kw === '전공프로젝트실습') {
+      // v2.0.11: '전공프로젝트실습'(학위전공심화과정)도 단어 포함이 아니라 '전공프로젝트실습1', '전공프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['전공프로젝트실습1', '전공프로젝트실습2'].includes(norm(c.name)));
+    } else {
+      matched = pool.filter(c => norm(c.name).includes(kw));
+    }
+    const present = matched.length > 0;
+    const hours = matched.reduce((s, c) => s + (c.semTotal || 0), 0);
+    const wantPresent = (r.presence || 'Y') === 'Y';
+    const lo = Number(r.creditMin) || 0, hi = Number(r.creditMax) || 0;
+    const active = lo > 0 || hi > 0;
+    const reqText = lo > 0 && hi > 0 ? `${lo}~${hi}시간` : lo > 0 ? `${lo}시간 이상` : `${hi}시간 이하`;
+    const title = r.label || r.keyword;
+    const tag = `${r.condOptional ? '[편성시만 검수] ' : ''}${gubun ? `[${gubun}] ` : ''}${semSet ? `[${semSpecText(r.semester)}] ` : ''}`;
+    const names = matched.map(c => c.name).join(', ');
+    let ok, val, req, detail;
+    if (wantPresent) {
+      const hOk = !active || (present && (lo === 0 || hours >= lo) && (hi === 0 || hours <= hi));
+      ok = present && hOk;
+      val = present ? `편성됨 (${names}${active ? ` · ${hours}h` : ''})` : '미편성';
+      req = `${tag}편성(Y)${active ? ` · ${reqText}` : ''}`;
+      detail = ok ? '' : (!present ? `${tag}'${r.keyword || title}' 교과가 편성되지 않았습니다.` : `편성시간 미충족 (실제 ${hours}h / 기준 ${reqText})`);
+    } else {
+      ok = !present;
+      val = present ? `편성됨 (${names})` : '미편성';
+      req = `${tag}미편성(N)`;
+      detail = ok ? '' : `${tag}'${r.keyword || title}' 교과가 편성되어 있습니다(미편성 기준).`;
+    }
+    results.push({ ok, title, val, req, detail, group: (r.group || '').trim(), groupOp: r.groupOp || 'AND' });
+  });
+  const groups = {};
+  results.forEach(x => {
+    if (!x.group) { out.push(x); return; }
+    (groups[x.group] = groups[x.group] || { op: x.groupOp, items: [] }).items.push(x);
+  });
+  Object.keys(groups).forEach(g => {
+    const { op, items } = groups[g];
+    const ok = op === 'OR' ? items.some(i => i.ok) : items.every(i => i.ok);
+    out.push({ ok, title: `[그룹] ${g}`, val: items.map(i => `${i.title}: ${i.val}`).join(' / '),
+      req: items.map(i => i.req).join(op === 'OR' ? ' 또는 ' : ' 그리고 '),
+      detail: ok ? '' : `[${op === 'OR' ? '모두 미충족' : '일부 미충족'}] ` + items.filter(i => !i.ok).map(i => i.detail || `${i.title} 미충족`).join(' / ') });
+  });
+  return out;
+}
+
+function renderCheckResult(courseKey, checks) {
+  const passCount = checks.filter(c => c.ok).length;
+  const allPass = passCount === checks.length;
+  const rate = checks.length ? Math.round(passCount / checks.length * 100) : 0;
+  const courseName = (findCourse(courseKey) || {}).course ? findCourse(courseKey).course.name : courseKey;
+  lastCheck = { checks, allPass, passCount, courseName, courseKey, info: lastDocInfo };
+
+  $('#resultArea').innerHTML = `
+    <div class="panel-head" style="border:0;padding:8px 0 14px">
+      <h2>검수 결과</h2>
+      <span class="desc">적합 ${passCount}/${checks.length} 항목 (${rate}%)</span>
+    </div>
+
+    <div class="result-banner ${allPass ? 'pass' : 'fail'}">
+      <div class="rb-ico">${allPass ? ICON.big_ok : ICON.big_no}</div>
+      <div>
+        <h3>${allPass ? '교과편성 기준에 적합합니다' : '일부 기준에 부적합합니다'}</h3>
+        <p>${allPass ? '설정된 모든 세부기준을 충족했습니다.' : `${checks.length - passCount}개 항목이 기준을 충족하지 못했습니다.`}</p>
+      </div>
+      <div class="score"><b>${passCount}/${checks.length}</b><span>적합 항목 (${rate}%)</span></div>
+    </div>
+
+    <div class="panel" style="overflow-x:auto">
+      <table class="vtable">
+        <thead><tr>
+          <th style="width:52px">순번</th><th>검수항목</th><th>값</th><th>검수기준</th><th style="width:84px">검수결과</th>
+        </tr></thead>
+        <tbody>
+          ${checks.map((c, i) => `<tr class="${c.ok ? '' : 'no'}">
+            <td>${i + 1}</td>
+            <td class="vt-item">${esc(c.title)}${(!c.ok && c.detail) ? `<div class="vt-note">${esc(c.detail)}</div>` : ''}</td>
+            <td>${esc(c.val)}</td>
+            <td>${esc(c.req)}</td>
+            <td class="${c.ok ? 'vt-y' : 'vt-n'}">${c.ok ? 'Y' : 'N'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="toolbar" style="margin:16px 0 4px">
+      <label class="pathway-save" title="과정평가형으로 운영하는 경우 체크하고 자격명을 입력하세요">
+        <input type="checkbox" id="savePathway" ${(courseKey === 'voc-hitech' && lastVocPathway) ? 'checked' : ''} onchange="document.getElementById('saveQual').disabled=!this.checked"> 과정평가형
+        <input type="text" id="saveQual" placeholder="자격명 입력" ${(courseKey === 'voc-hitech' && lastVocPathway) ? '' : 'disabled'} style="width:150px">
+      </label>
+      <button class="btn btn-soft" onclick="saveCheckResultToHistory('${courseKey}')">${ICON.check} 검수결과 저장</button>
+      <button class="btn btn-soft" onclick="saveCheckResult('${courseKey}')">${ICON.upload} 검수결과 저장(CSV)</button>
+      <button class="btn btn-primary" onclick="openPrintPreview('${courseKey}')">${ICON.book} 검수결과 출력하기</button>
+      <span style="font-size:12.5px;color:var(--c-text-soft)">미리보기 후 PDF 저장 / 프린터 인쇄 · 검수결과 저장은 이 프로그램의 <a href="#/history">검수내역</a>에 누적됩니다</span>
+    </div>`;
+
+  $('#resultArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ---------- 검수 엔진 -------------------------------------------------- */
+function runCheck(courseKey) {
+  syncRowsFromDom();
+  if (isVocTimeBased(courseKey)) { runVocTechCheck(courseKey); return; }
+  const std = Store.get(courseKey);
+  const rows = curriculumRows
+    .map(r => ({
+      name: r.name, gwan: r.gwan, semester: +r.semester || 0,
+      category: r.category, credit: +r.credit || 0,
+      theory: +r.theory || 0, practice: +r.practice || 0,
+    }))
+    .filter(r => r.name && r.credit > 0);
+
+  if (!rows.length) { toast('검수할 교과목을 1개 이상 입력하세요.'); return; }
+
+  // 집계
+  const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
+  const totalTheory = rows.reduce((s, r) => s + r.theory, 0);
+  const totalPractice = rows.reduce((s, r) => s + r.practice, 0);
+  const totalHours = totalTheory + totalPractice;
+  const reqCredit = rows.filter(r => r.category === '필수').reduce((s, r) => s + r.credit, 0);
+  const semesters = [...new Set(rows.map(r => r.semester).filter(Boolean))].sort((a, b) => a - b);
+  const practiceRatio = totalHours ? Math.round(totalPractice / totalHours * 1000) / 10 : 0;
+  const requiredRatio = totalCredit ? Math.round(reqCredit / totalCredit * 1000) / 10 : 0;
+
+  // 학기별 학점
+  const semCredits = {};
+  rows.forEach(r => { if (r.semester) semCredits[r.semester] = (semCredits[r.semester] || 0) + r.credit; });
+  const semOver = Object.entries(semCredits).filter(([, c]) => c > std.creditsPerSemMax);
+  const semUnder = Object.entries(semCredits).filter(([, c]) => c < std.creditsPerSemMin);
+  const semVals = Object.values(semCredits);
+  const semLo = semVals.length ? Math.min(...semVals) : 0;
+  const semHi = semVals.length ? Math.max(...semVals) : 0;
+  // 교과목 학점 범위
+  const badCourses = rows.filter(r => r.credit < std.courseCreditMin || r.credit > std.courseCreditMax);
+  const ccLo = Math.min(...rows.map(r => r.credit));
+  const ccHi = Math.max(...rows.map(r => r.credit));
+
+  const checks = [];
+  const add = (ok, title, val, req, detail = '') => checks.push({ ok, title, val, req, detail });
+
+  add(totalCredit >= std.totalCreditsMin && totalCredit <= std.totalCreditsMax,
+      '총 편성학점', totalCredit + '학점',
+      `${std.totalCreditsMin}~${std.totalCreditsMax}학점`);
+
+  add(semesters.length === std.semesters,
+      '운영 학기 수', semesters.length + '학기',
+      std.semesters + '학기',
+      semesters.length ? `편성 학기: ${semesters.join(', ')}학기` : '학기 정보 없음');
+
+  add(semOver.length === 0 && semUnder.length === 0,
+      '학기당편성학점', `${semLo}~${semHi}학점`,
+      `학기당 ${std.creditsPerSemMin}~${std.creditsPerSemMax}학점`,
+      (semOver.length || semUnder.length)
+        ? `기준 외: ${[...semOver, ...semUnder].map(([s, c]) => `${s}학기(${c})`).join(', ')}` : '모든 학기 적합');
+
+  add(badCourses.length === 0,
+      '교과목당 학점', `${ccLo}~${ccHi}학점`,
+      `과목당 ${std.courseCreditMin}~${std.courseCreditMax}학점`,
+      badCourses.length ? `기준 외 과목: ${badCourses.map(c => c.name).join(', ')}` : '모든 과목 적합');
+
+  // v2.0.14: 4학점 이상 개설 교과목수(융합프로젝트실습 교과 제외) — 기준 이내(과정평가형 체크 시 상한 미적용)
+  if (std.over3Allow !== undefined && std.over3Allow !== null) {
+    const isPathwayChecked = !!document.getElementById('savePathway')?.checked;
+    const CONVERGE_NAMES = courseKey === 'degree-advanced'
+      ? ['전공프로젝트실습1', '전공프로젝트실습2']
+      : ['융합프로젝트실습1', '융합프로젝트실습2'];
+    const over4Courses = rows.filter(r => r.credit >= 4 && !CONVERGE_NAMES.includes(r.name.replace(/\s+/g, '')));
+    const over4Ok = isPathwayChecked || over4Courses.length <= std.over3Allow;
+    add(over4Ok,
+        '4학점이상 개설 교과목수(융합프로젝트실습 제외)', over4Courses.length + '개',
+        isPathwayChecked ? `${std.over3Allow}개 이내(과정평가형 체크로 제한 없음)` : `${std.over3Allow}개 이내`,
+        over4Ok ? '' : `4학점 이상 과목: ${over4Courses.map(c => c.name).join(', ')}`);
+  }
+
+  add(practiceRatio >= std.practiceRatioMin,
+      '실습편성비율', practiceRatio + '%',
+      '최소 ' + std.practiceRatioMin + '%',
+      `이론 ${totalTheory}시수 · 실습 ${totalPractice}시수`);
+
+  if (std.requiredRatioMin > 0) {
+    add(requiredRatio >= std.requiredRatioMin,
+        '필수과목 비율', requiredRatio + '%',
+        '최소 ' + std.requiredRatioMin + '%',
+        `필수 ${reqCredit}학점 / 전체 ${totalCredit}학점`);
+  }
+
+  // 전공필수 편성학점 — 교과구분(전공) 정보가 있을 때만 점검 (최소/최대 범위 점검)
+  if ((std.majorReqMin > 0 || std.majorReqMax > 0) && rows.some(r => r.gwan)) {
+    const majorReqCredit = rows.filter(r => r.gwan === '전공' && r.category === '필수').reduce((s, r) => s + r.credit, 0);
+    const okMin = std.majorReqMin <= 0 || majorReqCredit >= std.majorReqMin;
+    const okMax = std.majorReqMax <= 0 || majorReqCredit <= std.majorReqMax;
+    const ok = okMin && okMax;
+    const refText = std.majorReqMax > 0 ? `${std.majorReqMin}~${std.majorReqMax}학점` : `최소 ${std.majorReqMin}학점`;
+    add(ok,
+        '전공필수 편성학점', majorReqCredit + '학점',
+        refText,
+        ok ? '' : `전공필수 ${majorReqCredit}학점 — 기준(${refText}) 미충족`);
+  }
+
+  if (std.capstone) {
+    const has = rows.some(r => /캡스톤|capstone|졸업작품|졸업과제|프로젝트/i.test(r.name));
+    add(has, '캡스톤(졸업작품) 포함', has ? '포함됨' : '미포함', '필수 포함', has ? '' : "'캡스톤/졸업작품' 관련 교과목이 필요합니다.");
+  }
+
+  // 교과목 편성기준(사용자 정의) — 교과구분 내 키워드 교과의 편성여부(Y/N) + 학점수 점검
+  const GUBUN_MAP = { '전공필수': ['전공', '필수'], '전공선택': ['전공', '선택'], '교양필수': ['교양', '필수'], '교양선택': ['교양', '선택'] };
+  const ruleEvalResults = [];
+  CourseRuleStore.get(courseKey).forEach(r => {
+    if (!r.on) return;
+    const kw = (r.keyword || r.label || '').replace(/\s+/g, '');
+    if (!kw) return;
+    // 편성시만 검수: 해당 키워드가 전체 교과과정 어디에도 편성되어 있지 않으면 이 검수항목 자체를 적용하지 않음
+    if (r.condOptional) {
+      const anyOffered = rows.some(c => c.name.replace(/\s+/g, '').includes(kw));
+      if (!anyOffered) return;
+    }
+    const gubun = (r.gubun || '').trim();
+    let pool = rows;
+    if (gubun) {
+      if (isVocTimeBased(courseKey)) {
+        // 직업교육과정: 교양교과/기초기술교과/계열공통교과/특화전공교과 — 단일 구분값을 gwan에 직접 매칭
+        pool = rows.filter(c => (c.gwan || '').trim() === gubun);
+      } else if (GUBUN_MAP[gubun]) {
+        const [g, cat] = GUBUN_MAP[gubun];
+        pool = rows.filter(c => (c.gwan || '').trim() === g && (c.category || '').trim() === cat);
+      }
+    }
+    const semSet = parseSemSpec(r.semester);
+    if (semSet) pool = pool.filter(c => semSet.has(Number(c.semester)));
+    // v2.0.8: 키워드가 '산업안전'인 규칙은 단어 포함이 아니라, "산업안전교과 설정"에 등록된 교과명과 완전일치하는 교과만 인정한다.
+    const isSafetyRule = kw === '산업안전' || /^산업\s*안전$/.test((r.label || r.keyword || '').trim());
+    let matched;
+    if (isSafetyRule) {
+      const safetyRegNamesRaw0 = SimpleListStore.get('safety', courseKey).map(x => (x.name || '').trim()).filter(Boolean);
+      const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
+      const safetyKeyFn = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+      const safetyRegKeys = safetyRegNames.map(safetyKeyFn).filter(k => k.length >= 2);
+      matched = pool.filter(c => safetyRegKeys.includes(safetyKeyFn(c.name)));
+    } else if (kw === '융합프로젝트실습') {
+      // v2.0.10: '융합프로젝트실습'은 단어 포함이 아니라 '융합프로젝트실습1', '융합프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['융합프로젝트실습1', '융합프로젝트실습2'].includes(c.name.replace(/\s+/g, '')));
+    } else if (kw === '전공프로젝트실습') {
+      // v2.0.11: '전공프로젝트실습'(학위전공심화과정)도 단어 포함이 아니라 '전공프로젝트실습1', '전공프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['전공프로젝트실습1', '전공프로젝트실습2'].includes(c.name.replace(/\s+/g, '')));
+    } else {
+      matched = pool.filter(c => c.name.replace(/\s+/g, '').includes(kw));
+    }
+    // '산업AI' 관련 규칙은 교과명 자체에 '산업AI'라는 말이 들어가지 않고(예: AI로봇제어실습),
+    // 대신 '나.AI교과' 표의 '산업AI' 행에만 적힌다 — 이 행에서 추출된 실제 교과명(lastNarrative.industrialAiCourses)을
+    // 별도로 매칭해 전공선택 편성으로 인정한다(학점은 표에 함께 적힌 값 사용).
+    const isIndustrialAiRule = /산업\s*AI/.test(kw) || /산업\s*AI/.test(r.label || r.keyword || '');
+    const narrativeCourses = (isIndustrialAiRule && lastNarrative && lastNarrative.industrialAiCourses) || [];
+    const narrativeCredit = (isIndustrialAiRule && lastNarrative && lastNarrative.industrialAiCredit) || 0;
+    const present = matched.length > 0 || narrativeCourses.length > 0;
+    const actualCredit = matched.reduce((s, c) => s + c.credit, 0) + (matched.length === 0 ? narrativeCredit : 0);
+    const wantPresent = (r.presence || 'Y') === 'Y';
+    const lo = Number(r.creditMin) || 0;
+    const hi = Number(r.creditMax) || 0;
+    const creditActive = lo > 0 || hi > 0;
+    const creditReqText = lo > 0 && hi > 0 ? `${lo}~${hi}학점` : lo > 0 ? `${lo}학점 이상` : `${hi}학점 이하`;
+    const title = r.label || r.keyword;
+    const gubunTag = gubun ? `[${gubun}] ` : '';
+    const semTag = semSet ? `[${semSpecText(r.semester)}] ` : '';
+    const condTag = r.condOptional ? '[편성시만 검수] ' : '';
+    const tagPrefix = `${condTag}${gubunTag}${semTag}`;
+
+    let ok, val, req, detail;
+    if (wantPresent) {
+      const creditOk = !creditActive ? true
+        : (present && (lo === 0 || actualCredit >= lo) && (hi === 0 || actualCredit <= hi));
+      ok = present && creditOk;
+      val = present ? `편성됨${creditActive ? ` · ${actualCredit}학점` : ''}` : '미편성';
+      req = `${tagPrefix}편성(Y)${creditActive ? ` · ${creditReqText}` : ''}`;
+      detail = ok ? '' : (!present
+        ? `${tagPrefix}'${r.keyword || title}' 교과가 편성되지 않았습니다.`
+        : `학점 미충족 (실제 ${actualCredit}학점 / 기준 ${creditReqText})`);
+    } else {
+      ok = !present;
+      val = present ? `편성됨${actualCredit > 0 ? ` · ${actualCredit}학점` : ''}` : '미편성';
+      req = `${tagPrefix}미편성(N)`;
+      detail = ok ? '' : `${tagPrefix}'${r.keyword || title}' 교과가 편성되어 있습니다(미편성 기준).`;
+    }
+    ruleEvalResults.push({ ok, title, val, req, detail, group: (r.group || '').trim(), groupOp: r.groupOp || 'AND' });
+  });
+
+  // 그룹 결합: 같은 그룹명을 가진 여러 검수항목을 AND/OR 조건으로 하나로 결합
+  const groupMap = {};
+  ruleEvalResults.forEach(res => {
+    if (!res.group) { add(res.ok, res.title, res.val, res.req, res.detail); return; }
+    if (!groupMap[res.group]) groupMap[res.group] = { op: res.groupOp, items: [] };
+    groupMap[res.group].items.push(res);
+  });
+  Object.keys(groupMap).forEach(g => {
+    const { op, items } = groupMap[g];
+    const ok = op === 'OR' ? items.some(it => it.ok) : items.every(it => it.ok);
+    const val = items.map(it => `${it.title}: ${it.val}`).join(' / ');
+    const req = items.map(it => it.req).join(op === 'OR' ? ' 또는 ' : ' 그리고 ');
+    const failed = items.filter(it => !it.ok);
+    const detail = ok ? '' : `[${op === 'OR' ? '모두 미충족' : '일부 미충족'}] ` + failed.map(it => it.detail || `${it.title} 미충족`).join(' / ');
+    add(ok, `[그룹] ${g}`, val, req, detail);
+  });
+
+  // 교양필수교과 검수 — 교양교과 설정(LiberalArtsStore)에 저장된 역량군별 필수교과 목록 기준으로 대조 (검수기준은 LiberalCheckRuleStore에서 사용자가 변경 가능)
+  if (!isVocTimeBased(courseKey) && LiberalArtsStore.isSet(courseKey)) {
+    const la = LiberalArtsStore.get(courseKey);
+    const rule = LiberalCheckRuleStore.get(courseKey);
+    const norm = (s) => (s || '').replace(/\s+/g, '');
+    const groupInfo = LIBERAL_GROUPS.map(g => {
+      const reqNames = (la[g.key] && la[g.key].required || []).map(r => (r.name || '').trim()).filter(Boolean);
+      if (!reqNames.length) return { g, configured: false };
+      const matched = rows.filter(r => r.gwan === '교양' && r.category === '필수'
+        && reqNames.some(rn => norm(r.name).includes(norm(rn))));
+      return { g, configured: true, reqNames, matched, offered: matched.length > 0, over: matched.length > rule.maxPerGroup, credit: matched.reduce((s, r) => s + r.credit, 0) };
+    }).filter(x => x.configured);
+
+    if (groupInfo.length) {
+      // 1) 역량군별 저장된 필수교과가 실제 편성되어 있는지
+      if (false && rule.checkOffered) {   // v1.9.30 폐지
+        const missing = groupInfo.filter(x => !x.offered);
+        add(missing.length === 0,
+            '교양필수교과 편성 여부(역량군별)',
+            groupInfo.map(x => `${x.g.label}: ${x.offered ? '편성' : '미편성'}`).join(' / '),
+            '설정된 필수교과가 역량군별로 모두 편성',
+            missing.length ? `미편성 역량군: ${missing.map(x => x.g.label + '(' + x.reqNames.join(',') + ')').join(', ')}` : '');
+      }
+
+      // 2) 역량군당 허용 초과 편성 여부
+      if (rule.checkMaxPerGroup) {
+        const over = groupInfo.filter(x => x.over);
+        add(over.length === 0,
+            '교양필수교과 역량군당 편성 수',
+            groupInfo.map(x => `${x.g.label}: ${x.matched.length}과목`).join(' / '),
+            `역량군당 최대 ${rule.maxPerGroup}과목`,
+            over.length ? `초과 편성 역량군: ${over.map(x => x.g.label + '(' + x.matched.length + '과목)').join(', ')}` : '');
+      }
+
+      // 3) 총 편성 역량군수 · 총학점 검수
+      if (rule.checkTotal) {
+        const offeredGroups = groupInfo.filter(x => x.offered);
+        const totalGroupCount = offeredGroups.length;
+        const totalCredit = offeredGroups.reduce((s, x) => s + x.credit, 0);
+        const okTotal = totalGroupCount === rule.targetGroupCount && totalCredit === rule.targetTotalCredit;
+        add(okTotal,
+            '교양필수교과 총 편성 역량군수/학점',
+            `${totalGroupCount}개 역량군 · ${totalCredit}학점`,
+            `${rule.targetGroupCount}개 역량군 · ${rule.targetTotalCredit}학점`,
+            okTotal ? '' : `편성 현황: ${offeredGroups.map(x => x.g.label + ' ' + x.credit + '학점').join(', ')}`);
+      }
+    }
+  }
+
+  // 산업안전·산업AI 교과편성확인 — 등록된 교과명 중 가장 현재 검수기준(최소 편성수)을 만족하는지 확인
+  Object.keys(SIMPLE_LIST_TYPES).forEach(type => {
+    if (!SimpleListStore.isSet(type, courseKey)) return;
+    const meta = SIMPLE_LIST_TYPES[type];
+    const rule = SimpleRuleStore.get(type, courseKey);
+    if (!rule.checkMinOne) return;
+    const names = SimpleListStore.get(type, courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+    const norm = (s) => (s || '').replace(/\s+/g, '');
+    // 리포팅 표시용: 괄호(및 괄호 안 내용) 제거 — 예: '산업안전교과(50ㄱ0)' → '산업안전교과' (매칭 로직에는 영향 없음)
+    const displayName = (s) => (s || '').replace(/\(.*?\)/g, '').trim();
+    // v2.0.4: 세부기준설정에 등록된 교과명 기준 매칭 — 괄호·공백·특수기호를 제거하고 양방향 포함 비교
+    const key = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+    const regKeys = names.map(key).filter(k => k.length >= 2);
+    // v2.0.8: 산업안전교과는 등록 리스트와 완전일치만 인정(부분일치 제거). 그 외 유형(산업AI/AI활용)은 기존 양방향 부분일치 유지.
+    const matched = rows.filter(r => {
+      const rk = key(r.name);
+      if (!rk) return false;
+      return type === 'safety' ? regKeys.includes(rk) : regKeys.some(k => rk === k || rk.includes(k) || (rk.length >= 3 && k.includes(rk)));
+    })
+      .filter((r, i, a) => a.findIndex(x => key(x.name) === key(r.name)) === i);   // 학기별 중복 행 1과목으로
+    // 산업AI교과: '나.AI교과' 표의 '산업AI교과' 행(1~4학기 셀)에서 직접 추출된 교과명은
+    // 등록된 50개 풀에 없어도(학과 자율편성) 편성된 것으로 인정한다.
+    const tableCourses = (type === 'industrialAi' && lastNarrative && lastNarrative.industrialAiCourses) || [];
+    const alreadyCounted = (nm) => matched.some(r => key(r.name).includes(key(nm)));
+    const extraFromTable = tableCourses.filter(nm => !alreadyCounted(nm));
+    const totalCount = matched.length + extraFromTable.length;
+    const ok = totalCount >= rule.minCount;
+    const matchedLabel = [
+      ...matched.map(m => displayName(m.name)),
+      ...extraFromTable.map(nm => displayName(nm) + '(자율편성·표확인)'),
+    ];
+    add(ok,
+        type === 'industrialAi' ? meta.checkTitle + '(자체편성포함)' : meta.checkTitle,
+        `편성된 ${meta.itemLabel}: ${totalCount}과목${matchedLabel.length ? ' (' + matchedLabel.join(', ') + ')' : ''}`,
+        `최소 ${rule.minCount}과목 이상 편성`,
+        ok ? '' : (type === 'industrialAi'
+          ? `등록된 ${meta.itemLabel} 및 '나.AI교과' 표(산업AI교과 행) 확인 결과, 편성된 교과가 없거나 기준에 미달합니다. (최소 기준 ${rule.minCount}과목, 등록 과목수 ${names.length}과목)`
+          : `세부기준설정 - ${meta.itemLabel}에 등록된 교과(${names.map(displayName).join(', ')}) 중 편성된 교과가 없거나 기준에 미달합니다. (최소 기준 ${rule.minCount}과목, 등록 과목수 ${names.length}과목)`));
+  });
+
+  const passCount = checks.filter(c => c.ok).length;
+  const allPass = passCount === checks.length;
+  const rate = Math.round(passCount / checks.length * 100);
+
+  // 저장용 보관
+  const courseName = (findCourse(courseKey) || {}).course ? findCourse(courseKey).course.name : courseKey;
+  lastCheck = { checks, allPass, passCount, courseName, courseKey, info: lastDocInfo };
+
+  $('#resultArea').innerHTML = `
+    <div class="panel-head" style="border:0;padding:8px 0 14px">
+      <h2>검수 결과</h2>
+      <span class="desc">적합 ${passCount}/${checks.length} 항목 (${rate}%)</span>
+    </div>
+
+    <div class="result-banner ${allPass ? 'pass' : 'fail'}">
+      <div class="rb-ico">${allPass ? ICON.big_ok : ICON.big_no}</div>
+      <div>
+        <h3>${allPass ? '교과편성 기준에 적합합니다' : '일부 기준에 부적합합니다'}</h3>
+        <p>${allPass ? '설정된 모든 세부기준을 충족했습니다.' : `${checks.length - passCount}개 항목이 기준을 충족하지 못했습니다.`}</p>
+      </div>
+      <div class="score"><b>${passCount}/${checks.length}</b><span>적합 항목 (${rate}%)</span></div>
+    </div>
+
+    <div class="panel" style="overflow-x:auto">
+      <table class="vtable">
+        <thead><tr>
+          <th style="width:52px">순번</th><th>검수항목</th><th>값</th><th>검수기준</th><th style="width:84px">검수결과</th>
+        </tr></thead>
+        <tbody>
+          ${checks.map((c, i) => `<tr class="${c.ok ? '' : 'no'}">
+            <td>${i + 1}</td>
+            <td class="vt-item">${esc(c.title)}${(!c.ok && c.detail) ? `<div class="vt-note">${esc(c.detail)}</div>` : ''}</td>
+            <td>${esc(c.val)}</td>
+            <td>${esc(c.req)}</td>
+            <td class="${c.ok ? 'vt-y' : 'vt-n'}">${c.ok ? 'Y' : 'N'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="toolbar" style="margin:16px 0 4px">
+      <button class="btn btn-soft" onclick="saveCheckResultToHistory('${courseKey}')">${ICON.check} 검수결과 저장</button>
+      <button class="btn btn-soft" onclick="saveCheckResult('${courseKey}')">${ICON.upload} 검수결과 저장(CSV)</button>
+      <button class="btn btn-primary" onclick="openPrintPreview('${courseKey}')">${ICON.book} 검수결과 출력하기</button>
+      <span style="font-size:12.5px;color:var(--c-text-soft)">미리보기 후 PDF 저장 / 프린터 인쇄 · 검수결과 저장은 이 프로그램의 <a href="#/history">검수내역</a>에 누적됩니다</span>
+    </div>`;
+
+  $('#resultArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* 검수결과를 서버 내역에 누적 저장 — 검수한 모든 학과의 결과를 별도 화면에서 관리 */
+function saveCheckResultToHistory(courseKey) {
+  if (!lastCheck || !lastCheck.checks) { toast('먼저 세부기준 체크를 실행하세요.'); return; }
+  const info = lastCheck.info || {};
+  const record = {
+    id: 'h' + Date.now() + Math.random().toString(36).slice(2, 7),
+    savedAt: nowStamp(),
+    courseKey,
+    courseName: lastCheck.courseName,
+    info: {
+      년도: info.년도 || '', 캠퍼스: info.캠퍼스 || '', 과정: info.과정 || lastCheck.courseName || '',
+      대학: info.대학 || lookupUnivByCampus(info.캠퍼스) || '', 계열: info.계열 || '', 학과: info.학과 || '', 전공: info.전공 || '',
+    },
+    // v2.0.3 과정평가형 여부·자격명 — 저장 시 사용자가 직접 체크/입력(검수내역 표에서도 수정 가능)
+    pathwayEval: (() => { const el = document.getElementById('savePathway'); return el ? !!el.checked : ((courseKey === 'voc-hitech' && lastVocPathway) ? true : false); })(),
+    qualName: (() => { const el = document.getElementById('saveQual'), p = document.getElementById('savePathway'); return (el && p && p.checked) ? el.value.trim() : ''; })(),
+    remark: '',           // 비고(검수내역 화면에서 직접 입력)
+    trackKey: (COURSE_SPECS[courseKey] && COURSE_SPECS[courseKey].durationTracks) ? VocTrackStore.get(courseKey) : '',
+    trackLabel: courseKey === 'voc-senior' ? historyTrackLabel({ courseKey }) : '',
+    actualCredits: (() => { const c = lastCheck.checks.find(x => x.title === '총 편성학점'); const m = c && String(c.val).match(/(\d+(?:\.\d+)?)/); return m ? +m[1] : null; })(),   // v2.0.6 학위 편성학점
+    actualHours: (isVocTimeBased(courseKey) && lastVocSummary && lastVocSummary.total != null) ? +lastVocSummary.total : null,   // v1.9.22 학과 실제 편성시간
+    allPass: lastCheck.allPass,
+    passCount: lastCheck.passCount,
+    total: lastCheck.checks.length,
+    checks: lastCheck.checks,
+  };
+  HistoryStore.add(record);
+  toast('검수결과를 검수내역에 저장했습니다.');
+}
+
+/* =========================================================================
+ * 검수결과 내역(전체 학과 누적 관리 화면)
+ * ========================================================================= */
+let historyFilter = { cat: 'degree', univ: '', campus: '', series: '', verdict: '' };
+/* 검수내역 기간 검색(저장일시 기준) — 마지막 검색값을 서버에 기억 */
+const HIST_DATE_KEY = 'kpu-curri-histdate-v1';            // (구버전 공용 기간값 — 더 이상 사용하지 않음)
+/* v2.0.2 — 검수내역 검색조건(기간·판정 등)은 서버에 저장하지 않음: 현재 페이지 메모리에서만 유지(새로고침 시 초기화) */
+let _histDateMem = { from: '', to: '' };
+const HistDateStore = {
+  get() { return Object.assign({}, _histDateMem); },
+  set(v) { _histDateMem = { from: v.from || '', to: v.to || '' }; },
+};
+function setHistoryDate(field, value) {
+  const d = HistDateStore.get(); d[field] = value || '';
+  if (d.from && d.to && d.from > d.to) { toast('시작일이 종료일보다 늦습니다. 기간을 확인해 주세요.'); }
+  HistDateStore.set(d); renderHistory();
+}
+function setHistoryDatePreset(kind) {
+  const p = (x) => String(x).padStart(2, '0');
+  const f = (dt) => `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+  const t = new Date(), from = new Date();
+  if (kind === 'today') {}
+  else if (kind === '7d') from.setDate(t.getDate() - 6);
+  else if (kind === '1m') from.setMonth(t.getMonth() - 1);
+  else if (kind === '3m') from.setMonth(t.getMonth() - 3);
+  if (kind === 'all') HistDateStore.set({ from: '', to: '' });
+  else HistDateStore.set({ from: f(from), to: f(t) });
+  renderHistory();
+}
+/* 검수내역 각 건의 시간총량 트랙(1,200h/600h) 표시 라벨 — 해당 없는 과정은 '-' */
+/* v1.9.22 — 직업교육과정 검수내역 구분(시간): 학과 PDF의 실제 총 편성시간 출력
+ * 저장값(actualHours) → 과거 저장 건은 검수항목 '총 편성시간' 값에서 추출 → 없으면 기준 구분명 */
+function historyActualHours(r) {
+  if (r.actualHours != null && r.actualHours !== '') return +r.actualHours;
+  const c = (r.checks || []).find(x => /총\s*(편성|운영)\s*시간/.test(x.title || ''));
+  const m = c && String(c.val || '').match(/(\d{2,4})\s*h/);
+  return m ? +m[1] : null;
+}
+/* v2.0.6 — 학위과정 검수내역 편성학점: 저장값 → 과거 건은 검수항목 '총 편성학점' 값에서 추출 */
+function historyCreditLabel(r) {
+  let v = (r.actualCredits != null && r.actualCredits !== '') ? +r.actualCredits : null;
+  if (v == null) { const c = (r.checks || []).find(x => /총\s*편성\s*학점/.test(x.title || '')); const m = c && String(c.val || '').match(/(\d+(?:\.\d+)?)/); if (m) v = +m[1]; }
+  return v == null ? '-' : `${v}학점`;
+}
+function historyTrackLabel(r) {
+  if (typeof isVocTimeBased === 'function' && isVocTimeBased(r.courseKey) && r.checks) {
+    const h = historyActualHours(r);
+    if (h != null) return `${h}시간`;
+  }
+  const spec = COURSE_SPECS[r.courseKey];
+  // v1.9.21: 중장년특화(장기)는 단일 트랙(durationTracks 없음) → 세부기준 총시간 범위로 표시 (과거 저장 건 포함)
+  if (r.courseKey === 'voc-senior') {
+    if (r.trackLabel) return r.trackLabel;
+    const st = (typeof Store !== 'undefined' && Store.getSpec) ? (Store.getSpec('voc-senior').standards || {}) : {};
+    return `6개월(${st.totalHoursMin || 480}~${st.totalHoursMax || 576}시간)`;
+  }
+  if (!spec || !spec.durationTracks || !r.trackKey) return '-';
+  const t = spec.durationTracks[r.trackKey];
+  return t ? t.trackLabel : '-';
+}
+/* 검수내역 각 건이 학위과정/직업교육과정 중 어느 카테고리인지 조회 */
+function historyCatKey(r) {
+  const found = findCourse(r.courseKey);
+  return found && found.cat ? found.cat.key : '';
+}
+function setHistoryFilter(field, value) {
+  historyFilter[field] = value;
+  if (field === 'cat') { historyFilter.univ = ''; historyFilter.campus = ''; historyFilter.series = ''; }
+  if (field === 'univ') { historyFilter.campus = ''; historyFilter.series = ''; }
+  if (field === 'campus') { historyFilter.series = ''; }
+  renderHistory();
+}
+function resetHistoryFilter() {
+  historyFilter.verdict = '';
+  HistDateStore.set({ from: '', to: '' });
+  historyFilter.univ = '';
+  historyFilter.campus = '';
+  historyFilter.series = '';
+  renderHistory();
+}
+function setHistoryTab(tabKey) {
+  historyFilter = { cat: tabKey, univ: '', campus: '', series: '', verdict: historyFilter.verdict || '' };
+  renderHistory();
+}
+function renderHistory() {
+  showChrome(true);
+  const app = $('#app');
+  const allList = HistoryStore.all();
+
+  /* ---- 탭(과정 구분) 옵션 — 학위과정/직업교육과정을 완전히 분리된 탭으로 구성 ---- */
+  const tabOptions = Object.keys(PROGRAM_TREE).map(k => ({ key: k, title: PROGRAM_TREE[k].title }));
+  if (!historyFilter.cat) historyFilter.cat = tabOptions[0].key;
+  const tabScope = allList.filter(r => historyCatKey(r) === historyFilter.cat);
+
+  /* ---- 필터 옵션 구성(현재 탭 범위 내에서만) ---- */
+  const univOptions = [...new Set(tabScope.map(r => r.info.대학).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const campusScope = historyFilter.univ ? tabScope.filter(r => r.info.대학 === historyFilter.univ) : tabScope;
+  const campusOptions = [...new Set(campusScope.map(r => r.info.캠퍼스).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const seriesScope = historyFilter.campus ? campusScope.filter(r => r.info.캠퍼스 === historyFilter.campus) : campusScope;
+  const seriesOptions = [...new Set(seriesScope.map(r => r.info.계열).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+
+  /* ---- 필터 적용 ---- */
+  const hDate = HistDateStore.get();
+  const list = applyHistoryFilter(tabScope);
+
+  const rows = list.map((r, i) => `
+    <tr>
+      ${isAdmin() ? `<td><input type="checkbox" class="hist-check" data-id="${r.id}"></td>` : ''}
+      <td>${i + 1}</td>
+      <td class="l">${esc(r.info.과정 || r.courseName)}</td>
+      <td class="td-univ" title="${esc(r.info.대학 || '')}">${esc(r.info.대학 || '-')}</td>
+      <td>${esc(r.info.캠퍼스 || '-')}</td>
+      <td>${esc(r.info.계열 || '-')}</td>
+      <td>${esc(r.info.학과 || '-')}</td>
+      <td>${esc(r.info.전공 || '-')}</td>
+      ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : `<td>${esc(historyCreditLabel(r))}</td>`}
+      <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
+      <td class="td-qual"><input type="text" class="hist-qual" value="${esc(r.qualName || '')}" placeholder="${r.pathwayEval ? '자격명 입력' : '-'}" ${r.pathwayEval ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','qualName',this.value.trim())" title="${esc(r.qualName || '과정평가형 자격명')}"></td>
+      <td>${esc(r.savedAt)}</td>
+      <td class="td-verdict"><span class="chip ${r.allPass ? 'chip-ok' : 'chip-no'}">${r.allPass ? '적합' : '부적합'}</span></td>
+      <td>${r.passCount}/${r.total}</td>
+      <td class="l">${isAdmin() ? `<input type="text" class="hist-inline-input" data-id="${r.id}" data-field="remark" value="${esc(r.remark || '')}" placeholder="비고 입력" onchange="updateHistoryField('${r.id}','remark',this.value)">` : esc(r.remark || '-')}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="navigate('history/${r.id}')">보기</button>
+        ${isAdmin() ? `<button class="btn btn-ghost btn-sm" onclick="deleteHistoryOne('${r.id}')">삭제</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  app.innerHTML = `
+    <section class="page">
+      <div class="panel-head">
+        <h2>검수내역</h2>
+        <span class="desc">저장된 학과·전공별 검수결과를 모아 확인하고 관리합니다. (${esc(PROGRAM_TREE[historyFilter.cat].title)} — 전체 ${tabScope.length}건 중 ${list.length}건 표시)</span>
+      </div>
+
+      <div class="hist-tabs" style="display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--c-border,#e5e7eb);">
+        ${tabOptions.map(t => `
+          <button class="btn ${historyFilter.cat === t.key ? 'btn-primary' : 'btn-ghost'}"
+            style="border-radius:10px 10px 0 0;border-bottom:none;font-weight:700;"
+            onclick="setHistoryTab('${t.key}')">${esc(t.title)}</button>
+        `).join('')}
+      </div>
+
+      ${allList.length === 0 ? `
+        <div class="notice info"><span class="n-ico">${ICON.info}</span>
+          <div>아직 저장된 검수결과가 없습니다. 커리큘럼 체크 실행 후 <b>검수결과 저장</b> 버튼으로 내역을 쌓아보세요.</div></div>
+      ` : `
+        <div class="panel" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px;padding:14px 16px;">
+          <div class="field" style="margin:0;min-width:180px">
+            <label>대학</label>
+            <div class="input-wrap">
+              <select onchange="setHistoryFilter('univ', this.value)">
+                <option value="">전체</option>
+                ${univOptions.map(u => `<option value="${esc(u)}" ${historyFilter.univ === u ? 'selected' : ''}>${esc(u)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin:0;min-width:180px">
+            <label>캠퍼스</label>
+            <div class="input-wrap">
+              <select onchange="setHistoryFilter('campus', this.value)">
+                <option value="">전체</option>
+                ${campusOptions.map(c => `<option value="${esc(c)}" ${historyFilter.campus === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin:0;min-width:180px">
+            <label>계열</label>
+            <div class="input-wrap">
+              <select onchange="setHistoryFilter('series', this.value)">
+                <option value="">전체</option>
+                ${seriesOptions.map(s => `<option value="${esc(s)}" ${historyFilter.series === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin:0;min-width:130px">
+            <label>판정</label>
+            <div class="input-wrap">
+              <select onchange="setHistoryFilter('verdict', this.value)">
+                <option value="">전체</option>
+                <option value="pass" ${historyFilter.verdict === 'pass' ? 'selected' : ''}>적합</option>
+                <option value="fail" ${historyFilter.verdict === 'fail' ? 'selected' : ''}>부적합</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin:0">
+            <label>기간(저장일)</label>
+            <div class="input-wrap" style="display:flex;gap:6px;align-items:center">
+              <input type="date" value="${esc(hDate.from)}" max="${esc(hDate.to || '')}" onchange="setHistoryDate('from', this.value)" title="시작일">
+              <span>~</span>
+              <input type="date" value="${esc(hDate.to)}" min="${esc(hDate.from || '')}" onchange="setHistoryDate('to', this.value)" title="종료일">
+            </div>
+          </div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('today')">오늘</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('7d')">1주</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('1m')">1개월</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('3m')">3개월</button>
+            <button class="btn btn-ghost btn-sm" onclick="setHistoryDatePreset('all')">전체기간</button>
+          </div>
+          ${(historyFilter.univ || historyFilter.campus || historyFilter.series || historyFilter.verdict || hDate.from || hDate.to) ? `<button class="btn btn-ghost btn-sm" onclick="resetHistoryFilter()">필터 초기화</button>` : ''}
+        </div>
+        ${isAdmin() ? `
+        <div class="toolbar" style="margin-bottom:10px">
+          <button class="btn btn-ghost btn-sm" onclick="toggleAllHistory(this)">전체 선택/해제</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteHistorySelected()">${ICON.no} 선택 삭제</button>
+          <button class="btn btn-primary btn-sm" onclick="exportHistoryToExcel('filtered')">${ICON.set || ''} 조회 목록 엑셀로 저장 (${list.length}건)</button>
+          <button class="btn btn-soft btn-sm" onclick="exportHistoryToExcel('all')">${ICON.set || ''} 전체 목록 엑셀로 저장</button>
+          <span style="font-size:12.5px;color:var(--c-text-soft)">체크박스로 여러 건을 선택해 한번에 삭제할 수 있습니다. 대학·비고는 관리자가, 과정평가형·자격명은 누구나 표에서 직접 입력·수정할 수 있습니다.</span>
+        </div>` : `
+        <div class="notice info" style="margin-bottom:10px"><span class="n-ico">${ICON.info}</span>
+          <div style="flex:1">검수결과 조회와 조회 목록 엑셀 저장이 가능합니다. 삭제·전체 목록 엑셀 내려받기는 관리자 로그인 후 이용할 수 있습니다.</div>
+          <button class="btn btn-primary btn-sm" style="margin-left:10px;white-space:nowrap" onclick="exportHistoryToExcel('filtered')">${ICON.set || ''} 조회 목록 엑셀로 저장 (${list.length}건)</button></div>`}
+        <div class="panel hist-table-wrap">
+          <table class="vtable hist-table">
+            <thead><tr>
+              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : '<th class="col-track">편성학점</th>'}
+              <th class="col-pathway">과정평가형</th><th class="col-qual">자격명</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `}
+    </section>`;
+}
+
+/* 검수내역 표에서 직접 수정하는 필드(대학·과정평가형·비고)를 저장 */
+function updateHistoryField(id, field, value) {
+  // v2.0.3: 과정평가형·자격명은 모든 사용자가 수정 가능, 그 외 필드는 관리자만
+  if (!isAdmin() && field !== 'pathwayEval' && field !== 'qualName') { toast('수정은 관리자만 이용할 수 있습니다.'); renderHistory(); return; }
+  const r = HistoryStore.get(id);
+  if (!r) return;
+  if (field === '대학') {
+    HistoryStore.update(id, { info: { ...r.info, 대학: value } });
+  } else if (field === '캠퍼스') {
+    // 캠퍼스가 바뀌면 매핑표를 참조해 대학 값도 함께 자동 갱신
+    HistoryStore.update(id, { info: { ...r.info, 캠퍼스: value, 대학: lookupUnivByCampus(value) || r.info.대학 || '' } });
+  } else if (field === 'pathwayEval') {
+    HistoryStore.update(id, value ? { pathwayEval: true } : { pathwayEval: false, qualName: '' });
+    renderHistory();
+  } else {
+    HistoryStore.update(id, { [field]: value });
+  }
+}
+
+/* 검수내역 전체 목록을 엑셀(.xls, HTML 표 기반 — 별도 라이브러리 없이 오프라인에서도 엑셀로 정상 열림)로 내보낸다 */
+/* v2.0.5 — 검수내역 화면의 현재 검색조건(대학·캠퍼스·계열·판정·기간)을 적용한 목록 */
+function applyHistoryFilter(tabScope) {
+  const hDate = HistDateStore.get();
+  return tabScope.filter(r =>
+    (!historyFilter.univ || r.info.대학 === historyFilter.univ) &&
+    (!historyFilter.campus || r.info.캠퍼스 === historyFilter.campus) &&
+    (!historyFilter.series || r.info.계열 === historyFilter.series) &&
+    (!historyFilter.verdict || (historyFilter.verdict === 'pass' ? r.allPass : !r.allPass)) &&
+    (!hDate.from || String(r.savedAt || '').slice(0, 10) >= hDate.from) &&
+    (!hDate.to || String(r.savedAt || '').slice(0, 10) <= hDate.to)
+  );
+}
+function historyFilterLabel() {
+  const d = HistDateStore.get(), parts = [];
+  if (historyFilter.univ) parts.push(historyFilter.univ);
+  if (historyFilter.campus) parts.push(historyFilter.campus);
+  if (historyFilter.series) parts.push(historyFilter.series);
+  if (historyFilter.verdict) parts.push(historyFilter.verdict === 'pass' ? '적합' : '부적합');
+  if (d.from || d.to) parts.push(`${(d.from || '').replace(/-/g, '')}~${(d.to || '').replace(/-/g, '')}`);
+  return parts.join('_');
+}
+/* mode: 'filtered'(조회 목록 — 모든 사용자) | 'all'(탭 전체 — 관리자) */
+function exportHistoryToExcel(mode) {
+  const filtered = mode === 'filtered';
+  if (!filtered && !isAdmin()) { toast('전체 목록 엑셀 내려받기는 관리자만 이용할 수 있습니다.'); return; }
+  const tabKey = historyFilter.cat || Object.keys(PROGRAM_TREE)[0];
+  const scope = HistoryStore.all().filter(r => historyCatKey(r) === tabKey);
+  const list = filtered ? applyHistoryFilter(scope) : scope;
+  if (!list.length) { toast(filtered ? '조회된 검수내역이 없습니다. 검색조건을 확인해 주세요.' : `${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
+  const headers = historyFilter.cat === 'vocational'
+    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고']
+    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '편성학점', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
+  const bodyRows = list.map((r, i) => {
+    const cells = [
+      i + 1,
+      r.info.과정 || r.courseName || '',
+      r.info.대학 || '',
+      r.info.캠퍼스 || '',
+      r.info.계열 || '',
+      r.info.학과 || '',
+      r.info.전공 || '',
+      tabKey === 'vocational' ? historyTrackLabel(r) : historyCreditLabel(r),
+      r.pathwayEval ? 'Y' : '',
+      r.qualName || '',
+      r.savedAt || '',
+      r.allPass ? '적합' : '부적합',
+      `${r.passCount}/${r.total}`,
+      r.remark || '',
+    ];
+    return '<tr>' + cells.map(c => `<td>${esc(String(c))}</td>`).join('') + '</tr>';
+  }).join('');
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>검수내역</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
+<body><table border="1"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
+  const blob = new Blob(['\ufeff' + html], { type: 'application/vnd.ms-excel' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+  a.href = url;
+  const fl = filtered ? historyFilterLabel() : '';
+  a.download = `CurriculumChecker-검수내역-${PROGRAM_TREE[tabKey].title}-${filtered ? '조회목록' + (fl ? '-' + fl : '') : '전체'}-${ts}.xls`.replace(/[\\/:*?"<>|\s]+/g, '_');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast(`${PROGRAM_TREE[tabKey].title} 검수내역 목록을 엑셀 파일로 저장했습니다.`);
+}
+
+function toggleAllHistory(btn) {
+  const boxes = document.querySelectorAll('.hist-check');
+  const allChecked = [...boxes].every(b => b.checked);
+  boxes.forEach(b => b.checked = !allChecked);
+}
+
+function deleteHistoryOne(id) {
+  if (!isAdmin()) { toast('삭제는 관리자만 이용할 수 있습니다.'); return; }
+  if (!confirm('이 검수결과 내역을 삭제하시겠습니까?')) return;
+  HistoryStore.remove([id]);
+  toast('삭제했습니다.');
+  renderHistory();
+}
+
+function deleteHistorySelected() {
+  if (!isAdmin()) { toast('삭제는 관리자만 이용할 수 있습니다.'); return; }
+  const ids = [...document.querySelectorAll('.hist-check:checked')].map(b => b.dataset.id);
+  if (!ids.length) { toast('삭제할 항목을 선택하세요.'); return; }
+  if (!confirm(`선택한 ${ids.length}건의 검수결과 내역을 삭제하시겠습니까?`)) return;
+  HistoryStore.remove(ids);
+  toast(`${ids.length}건을 삭제했습니다.`);
+  renderHistory();
+}
+
+function renderHistoryDetail(id) {
+  showChrome(true);
+  const app = $('#app');
+  const r = HistoryStore.get(id);
+  if (!r) { app.innerHTML = `<section class="page"><div class="notice info"><span class="n-ico">${ICON.info}</span><div>해당 검수결과 내역을 찾을 수 없습니다.</div></div></section>`; return; }
+  const rows = r.checks.map((c, i) => `<tr class="${c.ok ? '' : 'no'}">
+    <td>${i + 1}</td>
+    <td class="vt-item">${esc(c.title)}${(!c.ok && c.detail) ? `<div class="vt-note">${esc(c.detail)}</div>` : ''}</td>
+    <td>${esc(c.val)}</td>
+    <td>${esc(c.req)}</td>
+    <td class="${c.ok ? 'vt-y' : 'vt-n'}">${c.ok ? 'Y' : 'N'}</td>
+  </tr>`).join('');
+
+  app.innerHTML = `
+    <section class="page">
+      <div class="panel-head">
+        <h2>검수결과 상세</h2>
+        <span class="desc"><a href="#/history">&larr; 검수내역 목록으로</a></span>
+      </div>
+      <div class="panel" style="padding:16px 20px;margin-bottom:14px">
+        <table class="vtable" style="border:0">
+          <tr><th style="width:90px">년도</th><td>${esc(r.info.년도 || '-')}</td><th style="width:90px">캠퍼스</th><td>${esc(r.info.캠퍼스 || '-')}</td></tr>
+          <tr><th>과정</th><td>${esc(r.info.과정 || r.courseName)}</td><th>계열</th><td>${esc(r.info.계열 || '-')}</td></tr>
+          <tr><th>학과</th><td>${esc(r.info.학과 || '-')}</td><th>${historyCatKey(r) === 'vocational' ? '직종' : '전공'}</th><td>${esc(r.info.전공 || '-')}</td></tr>
+          <tr><th>저장일시</th><td colspan="3">${esc(r.savedAt)}</td></tr>
+        </table>
+      </div>
+      <div class="result-banner ${r.allPass ? 'pass' : 'fail'}">
+        <div class="rb-ico">${r.allPass ? ICON.big_ok : ICON.big_no}</div>
+        <div>
+          <h3>${r.allPass ? '교과편성 기준에 적합합니다' : '일부 기준에 부적합합니다'}</h3>
+          <p>${r.allPass ? '저장 당시 모든 세부기준을 충족했습니다.' : `${r.total - r.passCount}개 항목이 기준을 충족하지 못했습니다.`}</p>
+        </div>
+        <div class="score"><b>${r.passCount}/${r.total}</b><span>적합 항목</span></div>
+      </div>
+      <div class="panel" style="overflow-x:auto">
+        <table class="vtable">
+          <thead><tr><th style="width:52px">순번</th><th>검수항목</th><th>값</th><th>검수기준</th><th style="width:84px">검수결과</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="toolbar" style="margin:16px 0 4px">
+        <button class="btn btn-danger btn-sm" onclick="deleteHistoryOne('${r.id}')">${ICON.no} 이 내역 삭제</button>
+      </div>
+    </section>`;
+}
+
+/* 검수 결과를 CSV로 저장 */
+function csvCell(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function sanitizeFileName(s) {
+  return String(s || '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+}
+function nowStamp() {
+  const n = new Date();
+  const p = (x) => String(x).padStart(2, '0');
+  return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())} ${p(n.getHours())}:${p(n.getMinutes())}`;
+}
+// 파일명: 과정-캠퍼스-계열-학과-전공-검수결과
+function reportFileBase() {
+  const info = (lastCheck && lastCheck.info) || {};
+  const parts = [(lastCheck && lastCheck.courseName) || info.과정, info.캠퍼스, info.계열, info.학과, info.전공]
+    .map(sanitizeFileName).filter(Boolean);
+  parts.push('검수결과');
+  return parts.join('-');
+}
+
+function saveCheckResult(courseKey) {
+  if (!lastCheck || !lastCheck.checks) { toast('먼저 세부기준 체크를 실행하세요.'); return; }
+  const info = lastCheck.info || {};
+  const lines = [];
+  lines.push(['교육운영계획서 정보']);
+  lines.push(['년도', info.년도 || '']);
+  lines.push(['캠퍼스', info.캠퍼스 || '']);
+  lines.push(['과정', info.과정 || lastCheck.courseName || '']);
+  lines.push(['계열', info.계열 || '']);
+  lines.push(['학과', info.학과 || '']);
+  lines.push(['전공', info.전공 || '']);
+  lines.push(['검수일시', nowStamp()]);
+  lines.push([]);
+  lines.push(['검수 결과', `${lastCheck.allPass ? '적합' : '부적합'} (${lastCheck.passCount}/${lastCheck.checks.length})`]);
+  lines.push(['순번', '검수항목', '값', '검수기준', '검수결과', '비고']);
+  lastCheck.checks.forEach((c, i) => {
+    lines.push([i + 1, c.title, c.val, c.req, c.ok ? 'Y' : 'N', c.ok ? '' : (c.detail || '')]);
+  });
+  const csv = '﻿' + lines.map(row => row.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  downloadFile(reportFileBase() + '.csv', csv);
+  toast('검수결과를 저장했습니다.');
+}
+
+/* ---- 검수결과 출력(미리보기 → PDF / 프린터) ---- */
+function buildReportHtml() {
+  const c = lastCheck, info = c.info || {};
+  const rows = c.checks.map((ch, i) => `<tr>
+    <td>${i + 1}</td><td class="l">${esc(ch.title)}${(!ch.ok && ch.detail) ? `<div class="rn">${esc(ch.detail)}</div>` : ''}</td>
+    <td>${esc(ch.val)}</td><td>${esc(ch.req)}</td><td class="${ch.ok ? 'y' : 'n'}">${ch.ok ? 'Y' : 'N'}</td></tr>`).join('');
+  return `<div class="report">
+    <h1 class="rep-title">${esc(c.courseName)} 교과과정 검수결과</h1>
+    <div class="rep-prog">한국폴리텍대학 교과과정 개편 세부기준 검수 프로그램</div>
+    <table class="rep-info">
+      <tr><th>년도</th><td>${esc(info.년도 || '-')}</td><th>캠퍼스</th><td>${esc(info.캠퍼스 || '-')}</td></tr>
+      <tr><th>과정</th><td>${esc(info.과정 || '-')}</td><th>계열</th><td>${esc(info.계열 || '-')}</td></tr>
+      <tr><th>학과</th><td>${esc(info.학과 || '-')}</td><th>${isVocTimeBased(c.courseKey) ? '직종' : '전공'}</th><td>${esc(info.전공 || '-')}</td></tr>
+      <tr><th>검수일시</th><td colspan="3">${nowStamp()}</td></tr>
+    </table>
+    <div class="rep-verdict ${c.allPass ? 'pass' : 'fail'}">종합 판정 : ${c.allPass ? '적합' : '부적합'} (${c.passCount}/${c.checks.length} 항목 충족)</div>
+    <table class="rep-table">
+      <thead><tr><th style="width:48px">순번</th><th>검수항목</th><th>값</th><th>검수기준</th><th style="width:72px">검수결과</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function openPrintPreview(courseKey) {
+  if (!lastCheck || !lastCheck.checks) { toast('먼저 세부기준 체크를 실행하세요.'); return; }
+  closePrintPreview();
+  const ov = document.createElement('div');
+  ov.id = 'printPreview';
+  ov.className = 'print-overlay';
+  ov.innerHTML = `
+    <div class="print-dialog">
+      <div class="print-toolbar no-print">
+        <b>검수결과 미리보기</b>
+        <span class="pt-hint">내용 확인 후 저장/인쇄하세요</span>
+        <div class="spacer"></div>
+        <button class="btn btn-primary btn-sm" onclick="exportReportPdf()">PDF로 저장</button>
+        <button class="btn btn-soft btn-sm" onclick="printReport()">프린터로 인쇄</button>
+        <button class="btn btn-ghost btn-sm" onclick="closePrintPreview()">닫기</button>
+      </div>
+      <div id="printArea" class="print-scroll">${buildReportHtml()}</div>
+    </div>`;
+  ov.addEventListener('click', (e) => { if (e.target === ov) closePrintPreview(); });
+  document.body.appendChild(ov);
+}
+function closePrintPreview() { const ov = document.getElementById('printPreview'); if (ov) ov.remove(); }
+function printReport() { window.print(); }
+
+async function exportReportPdf() {
+  const area = document.getElementById('printArea');
+  if (!area) { toast('미리보기를 먼저 여세요.'); return; }
+  if (!window.html2canvas || !window.jspdf) { toast('PDF 도구를 불러오지 못했습니다. 프린터 인쇄를 이용하세요.'); return; }
+  toast('PDF를 생성 중입니다…');
+  try {
+    const canvas = await html2canvas(area, { scale: 2, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pw = pdf.internal.pageSize.getWidth(), ph = pdf.internal.pageSize.getHeight();
+    const margin = 10, imgW = pw - margin * 2, imgH = canvas.height * imgW / canvas.width;
+    let heightLeft = imgH, position = margin;
+    pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+    heightLeft -= (ph - margin * 2);
+    while (heightLeft > 0) {
+      position = margin - (imgH - heightLeft);
+      pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', margin, position, imgW, imgH);
+      heightLeft -= (ph - margin * 2);
+    }
+    pdf.save(reportFileBase() + '.pdf');
+    toast('PDF로 저장했습니다.');
+  } catch (e) {
+    toast('PDF 생성 실패 — 프린터 인쇄를 이용하세요.');
+  }
+}
+
+/* ---------- 공통 컴포넌트 --------------------------------------------- */
+function breadcrumb(items) {
+  return `<nav class="breadcrumb">${items.map((it, i) => {
+    const [href, label] = it;
+    const sep = i < items.length - 1 ? `<span class="sep">${ICON.arrow}</span>` : '';
+    return href !== null
+      ? `<a onclick="navigate('${href}')">${esc(label)}</a>${sep}`
+      : `<span>${esc(label)}</span>`;
+  }).join('')}</nav>`;
+}
+
+/* 노출 함수 — 인라인 핸들러용 */
+Object.assign(window, {
+  navigate, saveStandards, resetStandards, renderStandards,
+  renderSpecStandards, stdTab, saveSpecStandards,
+  addRule, delRule,
+  addRow, delRow, clearRows, loadSample, runCheck, importCsv, downloadTemplate,
+  onPdfPick, onPdfDrop, onPdfDragOver, onPdfDragLeave, runRoadmapAnalyze, saveCheckResult, saveCheckResultToHistory,
+  openPrintPreview, closePrintPreview, printReport, exportReportPdf,
+  renderLiberalArts, laAddRow, laDelRow, laSave,
+  laToggleRulePanel, laSaveRule, laResetRule,
+  renderSimpleList, slAddRow, slDelRow, slSave,
+  slToggleRulePanel, slSaveRule, slResetRule,
+  toggleAllHistory, deleteHistoryOne, deleteHistorySelected,
+  exportAllData, importAllData,
+  updateHistoryField, exportHistoryToExcel,
+});
+
