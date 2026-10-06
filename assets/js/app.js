@@ -1511,6 +1511,9 @@ function emptyRow() { return { name: '', gwan: '전공', semester: '', category:
 let selectedPdf = null;
 let lastDocInfo = {};   // 마지막 분석한 교육운영계획서 정보(저장 파일명·헤더용)
 const AI_APPLIED_POOL_2027 = ['AI리터러시','멀티모달AI','생성형AI','바이브코딩','AI활용','데이터분석및시각화','AI코딩','AI에이전트','피지컬AI이해'];
+// v2.0.8: 산업안전교과 기본 리스트(5개) — "산업안전교과 설정"에 아직 등록된 교과가 없을 때 사용하는 내장 기본값.
+// 관리자가 설정 화면에서 직접 등록하면 그 등록 리스트가 우선 적용된다.
+const SAFETY_POOL_DEFAULT = ['화공산업안전','반도체산업안전','기계산업안전','전기산업안전','일반산업안전'];
 const VOC_TIME_KEYS = ['voc-tech', 'voc-hitech', 'voc-senior']; // 시간(hours) 기준 세부기준 체계를 쓰는 직업교육과정(전문기술/하이테크)
 function isVocTimeBased(courseKey) { return VOC_TIME_KEYS.includes(courseKey); }
 let lastNarrative = {}; // 마지막 분석 시 추출된 서술형 본문·표 기반 산업AI교과 목록
@@ -1921,12 +1924,19 @@ function runVocTechCheck(courseKey) {
   const hasGeongang = liberalCourses.some(c => c.name.includes('건강과능력개발'));
   const seriesCommonHours = groupHoursOf('계열공통');
   const seriesCommonRatio = totalHours ? Math.round(seriesCommonHours / totalHours * 1000) / 10 : 0;
-  const projectCourses = courses.filter(c => /프로젝트\s*실습/.test(c.name));
+  // v2.0.12: 교과명이 공백 제거 후 '프로젝트실습'과 완전일치하는 교과만 프로젝트실습 교과로 인정(포함 매칭 폐지 — AI프로젝트실습/종합프로젝트실습 등은 제외)
+  const projectCourses = courses.filter(c => c.name.replace(/\s+/g, '') === '프로젝트실습');
   const projectHours = projectCourses.reduce((s, c) => s + c.semTotal, 0);
   const projectRatio = totalHours ? Math.round(projectHours / totalHours * 1000) / 10 : 0;
   const capstoneCourse = courses.find(c => /종합실습/.test(c.name));
   // 산업안전 관련 교과는 실제 PDF에서 "일반산업안전", "전기산업안전"처럼 2개 이상으로 나뉘어 편성되는 경우가 있어, 매칭되는 모든 교과의 시간을 합산한다.
-  const safetyCourses = courses.filter(c => /산업\s*안전/.test(c.name));
+  // v2.0.8: 등록된 "산업안전교과 설정" 리스트에 있는 교과명과 완전일치(공백 제거 후)하는 교과만 인정한다.
+  // ("산업안전" 단어가 포함되었다는 이유만으로는 인정하지 않음 — 리스트 미등록 교과 오탐 방지)
+  const safetyRegNamesRaw0 = SimpleListStore.get('safety', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+  const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
+  const safetyKey = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+  const safetyRegKeys = safetyRegNames.map(safetyKey).filter(k => k.length >= 2);
+  const safetyCourses = courses.filter(c => safetyRegKeys.includes(safetyKey(c.name)));
   const safetyHoursSum = safetyCourses.reduce((s, c) => s + c.semTotal, 0);
   const safetySemesters = new Set();
   safetyCourses.forEach(c => c.sems.forEach(s => safetySemesters.add(s)));
@@ -2002,8 +2012,12 @@ function runVocTechCheck(courseKey) {
           ok ? '' : '계열공통교과 비율이 기준 범위를 벗어났습니다.');
     }
     if (cl.c_seniorSafety) {
-      const safetyNames = SimpleListStore.get('safety', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
-      const sc = courses.filter(c => safetyNames.some(n => norm(c.name).includes(norm(n))) || /산업\s*안전/.test(c.name));
+      // v2.0.8: "산업안전" 단어 포함 폴백을 제거하고, 등록된 리스트와 완전일치하는 교과만 인정한다.
+      const safetyNamesRaw0 = SimpleListStore.get('safety', courseKey).map(r => (r.name || '').trim()).filter(Boolean);
+      const safetyNames = safetyNamesRaw0.length ? safetyNamesRaw0 : SAFETY_POOL_DEFAULT;
+      const safetySeniorKey = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+      const safetySeniorKeys = safetyNames.map(safetySeniorKey).filter(k => k.length >= 2);
+      const sc = courses.filter(c => safetySeniorKeys.includes(safetySeniorKey(c.name)));
       const sum = sc.reduce((a, c) => a + c.semTotal, 0);
       const badGroup = sc.filter(c => !['기초기술', '특화전공'].includes(c.gwan));
       const need = std.safetyHours || 10;
@@ -2162,7 +2176,24 @@ function vocCourseRuleChecks(courseKey, rows, courses) {
     if (gubun) pool = pool.filter(c => gnorm(c.gwan) === gnorm(gubun));
     const semSet = parseSemSpec(r.semester);
     if (semSet) pool = pool.filter(c => [...c.sems].some(s => semSet.has(Number(s))));
-    const matched = pool.filter(c => norm(c.name).includes(kw));
+    // v2.0.8: 키워드가 '산업안전'인 규칙은 단어 포함이 아니라, "산업안전교과 설정"에 등록된 교과명과 완전일치하는 교과만 인정한다.
+    const isSafetyVocRule = kw === '산업안전' || /^산업\s*안전$/.test((r.label || r.keyword || '').trim());
+    let matched;
+    if (isSafetyVocRule) {
+      const safetyRegNamesRaw0 = SimpleListStore.get('safety', courseKey).map(x => (x.name || '').trim()).filter(Boolean);
+      const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
+      const safetyKeyFn = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+      const safetyRegKeys = safetyRegNames.map(safetyKeyFn).filter(k => k.length >= 2);
+      matched = pool.filter(c => safetyRegKeys.includes(safetyKeyFn(c.name)));
+    } else if (kw === '융합프로젝트실습') {
+      // v2.0.10: '융합프로젝트실습'은 단어 포함이 아니라 '융합프로젝트실습1', '융합프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['융합프로젝트실습1', '융합프로젝트실습2'].includes(norm(c.name)));
+    } else if (kw === '전공프로젝트실습') {
+      // v2.0.11: '전공프로젝트실습'(학위전공심화과정)도 단어 포함이 아니라 '전공프로젝트실습1', '전공프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['전공프로젝트실습1', '전공프로젝트실습2'].includes(norm(c.name)));
+    } else {
+      matched = pool.filter(c => norm(c.name).includes(kw));
+    }
     const present = matched.length > 0;
     const hours = matched.reduce((s, c) => s + (c.semTotal || 0), 0);
     const wantPresent = (r.presence || 'Y') === 'Y';
@@ -2371,7 +2402,24 @@ function runCheck(courseKey) {
     }
     const semSet = parseSemSpec(r.semester);
     if (semSet) pool = pool.filter(c => semSet.has(Number(c.semester)));
-    const matched = pool.filter(c => c.name.replace(/\s+/g, '').includes(kw));
+    // v2.0.8: 키워드가 '산업안전'인 규칙은 단어 포함이 아니라, "산업안전교과 설정"에 등록된 교과명과 완전일치하는 교과만 인정한다.
+    const isSafetyRule = kw === '산업안전' || /^산업\s*안전$/.test((r.label || r.keyword || '').trim());
+    let matched;
+    if (isSafetyRule) {
+      const safetyRegNamesRaw0 = SimpleListStore.get('safety', courseKey).map(x => (x.name || '').trim()).filter(Boolean);
+      const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
+      const safetyKeyFn = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
+      const safetyRegKeys = safetyRegNames.map(safetyKeyFn).filter(k => k.length >= 2);
+      matched = pool.filter(c => safetyRegKeys.includes(safetyKeyFn(c.name)));
+    } else if (kw === '융합프로젝트실습') {
+      // v2.0.10: '융합프로젝트실습'은 단어 포함이 아니라 '융합프로젝트실습1', '융합프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['융합프로젝트실습1', '융합프로젝트실습2'].includes(c.name.replace(/\s+/g, '')));
+    } else if (kw === '전공프로젝트실습') {
+      // v2.0.11: '전공프로젝트실습'(학위전공심화과정)도 단어 포함이 아니라 '전공프로젝트실습1', '전공프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => ['전공프로젝트실습1', '전공프로젝트실습2'].includes(c.name.replace(/\s+/g, '')));
+    } else {
+      matched = pool.filter(c => c.name.replace(/\s+/g, '').includes(kw));
+    }
     // '산업AI' 관련 규칙은 교과명 자체에 '산업AI'라는 말이 들어가지 않고(예: AI로봇제어실습),
     // 대신 '나.AI교과' 표의 '산업AI' 행에만 적힌다 — 이 행에서 추출된 실제 교과명(lastNarrative.industrialAiCourses)을
     // 별도로 매칭해 전공선택 편성으로 인정한다(학점은 표에 함께 적힌 값 사용).
@@ -2489,7 +2537,12 @@ function runCheck(courseKey) {
     // v2.0.4: 세부기준설정에 등록된 교과명 기준 매칭 — 괄호·공백·특수기호를 제거하고 양방향 포함 비교
     const key = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
     const regKeys = names.map(key).filter(k => k.length >= 2);
-    const matched = rows.filter(r => { const rk = key(r.name); return rk && regKeys.some(k => rk === k || rk.includes(k) || (rk.length >= 3 && k.includes(rk))); })
+    // v2.0.8: 산업안전교과는 등록 리스트와 완전일치만 인정(부분일치 제거). 그 외 유형(산업AI/AI활용)은 기존 양방향 부분일치 유지.
+    const matched = rows.filter(r => {
+      const rk = key(r.name);
+      if (!rk) return false;
+      return type === 'safety' ? regKeys.includes(rk) : regKeys.some(k => rk === k || rk.includes(k) || (rk.length >= 3 && k.includes(rk)));
+    })
       .filter((r, i, a) => a.findIndex(x => key(x.name) === key(r.name)) === i);   // 학기별 중복 행 1과목으로
     // 산업AI교과: '나.AI교과' 표의 '산업AI교과' 행(1~4학기 셀)에서 직접 추출된 교과명은
     // 등록된 50개 풀에 없어도(학과 자율편성) 편성된 것으로 인정한다.
