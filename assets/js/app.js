@@ -2402,6 +2402,42 @@ function runCheck(courseKey) {
     add(has, '캡스톤(졸업작품) 포함', has ? '포함됨' : '미포함', '필수 포함', has ? '' : "'캡스톤/졸업작품' 관련 교과목이 필요합니다.");
   }
 
+  // v2.0.18: 주간/야간에 따라 2-2학기(semester===4) 교양교과·전공이론 편성 허용 여부를 다르게 판단한다.
+  //   야간: 허용(적합) / 주간: 불가(위반)
+  if (courseKey === 'degree-regular' || courseKey === 'degree-advanced') {
+    const isNight = (lastDocInfo && lastDocInfo.주야간 === '야간');
+    const isDay = (lastDocInfo && lastDocInfo.주야간 === '주간');
+    const sem4Liberal = rows.filter(r => r.semester === 4 && (r.gwan || '').trim() === '교양');
+    const sem4MajorTheory = rows.filter(r => r.semester === 4 && (r.gwan || '').trim() === '전공' && r.theory > 0 && r.practice === 0);
+    const sem4List = [...sem4Liberal, ...sem4MajorTheory];
+    if (isNight) {
+      add(true,
+          '2-2학기 교양교과·전공이론 편성(야간)', sem4List.length + '개',
+          '야간과정 허용',
+          sem4List.length ? `편성: ${sem4List.map(c => c.name).join(', ')}` : '해당 교과 없음');
+    } else {
+      const ok = sem4List.length === 0;
+      add(ok,
+          '2-2학기 교양교과·전공이론 편성(주간 불가)', sem4List.length + '개',
+          '주간: 편성 불가',
+          ok ? '' : `2-2학기에 교양·전공이론 편성됨(주간과정 불가): ${sem4List.map(c => c.name).join(', ')}`);
+    }
+
+    // v2.0.18: 야간과정 현장실습 교과 편성 — 1-1 현장실습1, 1-2 현장실습2, 2-1 현장실습3, 2-2 현장실습4
+    if (isNight) {
+      const FIELD_TRAINING_SPEC = [
+        { sem: 1, name: '현장실습1' }, { sem: 2, name: '현장실습2' },
+        { sem: 3, name: '현장실습3' }, { sem: 4, name: '현장실습4' },
+      ];
+      const missing = FIELD_TRAINING_SPEC.filter(spec => !rows.some(r => r.semester === spec.sem && r.name.replace(/\s+/g, '') === spec.name));
+      const ok2 = missing.length === 0;
+      add(ok2,
+          '현장실습 교과 편성(야간: 1-1~2-2 각 1개씩)', (4 - missing.length) + '/4개',
+          '현장실습1~4 각 해당 학기에 1개씩 필수',
+          ok2 ? '' : `미편성: ${missing.map(m => `${m.sem}학기 ${m.name}`).join(', ')}`);
+    }
+  }
+
   // 교과목 편성기준(사용자 정의) — 교과구분 내 키워드 교과의 편성여부(Y/N) + 학점수 점검
   const GUBUN_MAP = { '전공필수': ['전공', '필수'], '전공선택': ['전공', '선택'], '교양필수': ['교양', '필수'], '교양선택': ['교양', '선택'] };
   const ruleEvalResults = [];
@@ -2652,6 +2688,7 @@ function saveCheckResultToHistory(courseKey) {
     info: {
       년도: info.년도 || '', 캠퍼스: info.캠퍼스 || '', 과정: info.과정 || lastCheck.courseName || '',
       대학: info.대학 || lookupUnivByCampus(info.캠퍼스) || '', 계열: info.계열 || '', 학과: info.학과 || '', 전공: info.전공 || '',
+      주야간: info.주야간 || '',   // v2.0.18 학위과정 주간/야간 구분
     },
     // v2.0.3 과정평가형 여부·자격명 — 저장 시 사용자가 직접 체크/입력(검수내역 표에서도 수정 가능)
     pathwayEval: (() => { const el = document.getElementById('savePathway'); return el ? !!el.checked : ((courseKey === 'voc-hitech' && lastVocPathway) ? true : false); })(),
@@ -2785,6 +2822,7 @@ function renderHistory() {
       <td>${esc(r.info.계열 || '-')}</td>
       <td>${esc(r.info.학과 || '-')}</td>
       <td>${esc(r.info.전공 || '-')}</td>
+      ${historyFilter.cat !== 'vocational' ? `<td>${esc(r.info.주야간 || '-')}</td>` : ''}
       ${historyFilter.cat === 'vocational' ? `<td>${esc(historyTrackLabel(r))}</td>` : `<td>${esc(historyCreditLabel(r))}</td>`}
       <td style="text-align:center"><input type="checkbox" ${r.pathwayEval ? 'checked' : ''} onchange="updateHistoryField('${r.id}','pathwayEval',this.checked)" title="과정평가형 여부"></td>
       <td class="td-qual"><input type="text" class="hist-qual" value="${esc(r.qualName || '')}" placeholder="${r.pathwayEval ? '자격명 입력' : '-'}" ${r.pathwayEval ? '' : 'disabled'} onchange="updateHistoryField('${r.id}','qualName',this.value.trim())" title="${esc(r.qualName || '과정평가형 자격명')}"></td>
@@ -2886,7 +2924,7 @@ function renderHistory() {
         <div class="panel hist-table-wrap">
           <table class="vtable hist-table">
             <thead><tr>
-              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : '<th class="col-track">편성학점</th>'}
+              ${isAdmin() ? '<th class="col-chk"></th>' : ''}<th class="col-no">순번</th><th class="col-course">과정</th><th class="col-univ">대학</th><th class="col-campus">캠퍼스</th><th class="col-series">계열</th><th class="col-dept">학과</th><th class="col-major">${historyFilter.cat === 'vocational' ? '직종' : '전공'}</th>${historyFilter.cat !== 'vocational' ? '<th class="col-daynight">주간/야간</th>' : ''}${historyFilter.cat === 'vocational' ? '<th class="col-track">편성시간</th>' : '<th class="col-track">편성학점</th>'}
               <th class="col-pathway">과정평가형</th><th class="col-qual">자격명</th><th class="col-date">저장일시</th><th class="col-verdict">판정</th><th class="col-rate">충족률</th><th class="col-remark">비고</th><th class="col-manage">관리</th>
             </tr></thead>
             <tbody>${rows}</tbody>

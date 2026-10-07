@@ -118,12 +118,27 @@ function extractDocInfo(lines) {
   if (!학과) 학과 = find(/\(([^)]*과)\)/);   // 보조: '과'로 끝나는 괄호어
   // 모든 학과명은 '과'로 끝남. 표지에 '과'가 생략된 경우 보정.
   if (학과 && !/과$/.test(학과)) 학과 += '과';
+  // v2.0.18: 2페이지 "1. 학과(직종)명 : OOO과 OOO전공 (야간)" 라인에서 주간/야간 구분을 추출한다.
+  //   해당 라인이 여러 줄로 쉰라질 수 있어 "1." 항목부터 다음 번호항목("2.")까지의 텍스트를 합쳐서 판단한다.
+  let 주야간 = '';
+  const deptLineIdx = lines.findIndex(l => /학과\s*\(\s*직종\s*\)\s*명/.test(l));
+  if (deptLineIdx >= 0) {
+    const chunk = [];
+    for (let i = deptLineIdx; i < lines.length && i < deptLineIdx + 6; i++) {
+      const l = lines[i] || '';
+      if (i > deptLineIdx && /^2[.\s]/.test(l.trim())) break;
+      chunk.push(l);
+    }
+    const joined = chunk.join(' ');
+    if (/야간/.test(joined)) 주야간 = '야간';
+    else if (/주간/.test(joined)) 주야간 = '주간';
+  }
   const 캠퍼스 = find(/대학(.+?캠퍼스)/) || find(/(?:^|[:：])([가-힣]{2,8}캠퍼스)/) || find(/([가-힣]{2,8}캠퍼스)/);
   const 확정 = find(/확정일자[:：]?([\d.]+)/) || find(/개발일자[:：]?([\d.]+)/);
   let 년도 = '';
   const dm = 확정.match(/(\d{4})\.(\d{1,2})/);
   if (dm) { const y = +dm[1], mo = +dm[2]; 년도 = (mo >= 3 ? y + 1 : y) + '학년도'; }
-  return { 년도, 캠퍼스, 과정, 계열, 학과, 전공, 확정일자: 확정 };
+  return { 년도, 캠퍼스, 과정, 계열, 학과, 전공, 확정일자: 확정, 주야간 };
 }
 
 /* 지정된 페이지 범위(1-based, inclusive)의 텍스트를 이어붙여 반환. range가 없으면 문서 전체 */
