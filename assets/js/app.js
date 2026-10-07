@@ -1770,6 +1770,7 @@ function renderRoadmapResult(courseKey, res) {
       ${infoItem('계열', info.계열)}
       ${infoItem('학과', info.학과)}
       ${infoItem('전공', info.전공)}
+      ${infoItem('주간/야간', info.주야간)}
     </div></div>
 
     <div class="panel-head" style="border:0;padding:18px 0 12px">
@@ -2445,6 +2446,8 @@ function runCheck(courseKey) {
     if (!r.on) return;
     const kw = (r.keyword || r.label || '').replace(/\s+/g, '');
     if (!kw) return;
+    // v2.0.19: '현장실습1'/'현장실습2' 고정학기 규칙은 주간 전용이다. 야간은 별도의 '현장실습 교과 편성(야간: 1-1~2-2 각 1개씩)' 항목으로 검증하므로 중복 적용하지 않는다.
+    if ((courseKey === 'degree-regular' || courseKey === 'degree-advanced') && (kw === '현장실습1' || kw === '현장실습2') && lastDocInfo && lastDocInfo.주야간 === '야간') return;
     // 편성시만 검수: 해당 키워드가 전체 교과과정 어디에도 편성되어 있지 않으면 이 검수항목 자체를 적용하지 않음
     if (r.condOptional) {
       const anyOffered = rows.some(c => c.name.replace(/\s+/g, '').includes(kw));
