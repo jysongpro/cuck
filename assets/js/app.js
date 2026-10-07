@@ -2408,7 +2408,7 @@ function runCheck(courseKey) {
   if (courseKey === 'degree-regular' || courseKey === 'degree-advanced') {
     const isNight = (lastDocInfo && lastDocInfo.주야간 === '야간');
     const isDay = (lastDocInfo && lastDocInfo.주야간 === '주간');
-    const sem4Liberal = rows.filter(r => r.semester === 4 && (r.gwan || '').trim() === '교양');
+    const sem4Liberal = rows.filter(r => r.semester === 4 && (r.gwan || '').trim() === '교양' && !/봉사활동/.test(r.name));
     const sem4MajorTheory = rows.filter(r => r.semester === 4 && (r.gwan || '').trim() === '전공' && r.theory > 0 && r.practice === 0);
     const sem4List = [...sem4Liberal, ...sem4MajorTheory];
     if (isNight) {
