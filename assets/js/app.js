@@ -2987,14 +2987,14 @@ function exportHistoryToExcel(mode) {
   const list = filtered ? applyHistoryFilter(scope) : scope;
   if (!list.length) { toast(filtered ? '조회된 검수내역이 없습니다. 검색조건을 확인해 주세요.' : `${PROGRAM_TREE[tabKey].title}에 저장된 검수내역이 없습니다.`); return; }
   const headers = historyFilter.cat === 'vocational'
-    ? ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '직종', '편성시간', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고']
-    : ['순번', '과정', '대학', '캠퍼스', '계열', '학과', '전공', '편성학점', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
+    ? ['순번', '대학', '캠퍼스', '과정', '계열', '학과', '직종', '편성시간', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고']
+    : ['순번', '대학', '캠퍼스', '과정', '계열', '학과', '전공', '편성학점', '과정평가형', '자격명', '저장일시', '판정', '충족률', '비고'];
   const bodyRows = list.map((r, i) => {
     const cells = [
       i + 1,
-      r.info.과정 || r.courseName || '',
       r.info.대학 || '',
       r.info.캠퍼스 || '',
+      r.info.과정 || r.courseName || '',
       r.info.계열 || '',
       r.info.학과 || '',
       r.info.전공 || '',
