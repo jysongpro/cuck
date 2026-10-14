@@ -861,7 +861,7 @@ function buildCriteriaList(courseKey) {
     const semTag = r.semester && r.semester.trim() ? `[${semSpecText(r.semester)}] ` : '';
     const condTag = r.condOptional ? '[편성시만 검수] ' : '';
     ruleItemsRaw.push({
-      title: r.label || r.keyword,
+      title: (r.label && r.keyword && r.label.trim() !== r.keyword.trim()) ? `${r.label} [교과목키워드: ${r.keyword}]` : (r.label || r.keyword),
       req: `${condTag}${gubun ? '[' + gubun + '] ' : ''}${semTag}${presenceReq}${creditReq}`,
       src: '교과목편성기준',
       group: (r.group || '').trim(),
@@ -2210,7 +2210,7 @@ function vocCourseRuleChecks(courseKey, rows, courses) {
     const lo = Number(r.creditMin) || 0, hi = Number(r.creditMax) || 0;
     const active = lo > 0 || hi > 0;
     const reqText = lo > 0 && hi > 0 ? `${lo}~${hi}시간` : lo > 0 ? `${lo}시간 이상` : `${hi}시간 이하`;
-    const title = r.label || r.keyword;
+    const title = (r.label && r.keyword && r.label.trim() !== r.keyword.trim()) ? `${r.label} [교과목키워드: ${r.keyword}]` : (r.label || r.keyword);
     const tag = `${r.condOptional ? '[편성시만 검수] ' : ''}${gubun ? `[${gubun}] ` : ''}${semSet ? `[${semSpecText(r.semester)}] ` : ''}`;
     const names = matched.map(c => c.name).join(', ');
     let ok, val, req, detail;
@@ -2497,7 +2497,7 @@ function runCheck(courseKey) {
     const hi = Number(r.creditMax) || 0;
     const creditActive = lo > 0 || hi > 0;
     const creditReqText = lo > 0 && hi > 0 ? `${lo}~${hi}학점` : lo > 0 ? `${lo}학점 이상` : `${hi}학점 이하`;
-    const title = r.label || r.keyword;
+    const title = (r.label && r.keyword && r.label.trim() !== r.keyword.trim()) ? `${r.label} [교과목키워드: ${r.keyword}]` : (r.label || r.keyword);
     const gubunTag = gubun ? `[${gubun}] ` : '';
     const semTag = semSet ? `[${semSpecText(r.semester)}] ` : '';
     const condTag = r.condOptional ? '[편성시만 검수] ' : '';
