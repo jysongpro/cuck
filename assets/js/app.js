@@ -779,6 +779,7 @@ function renderSpecStandards(courseKey, found) {
             </div>
             <div class="toolbar" style="margin-top:14px">
               <button type="button" class="btn btn-ghost btn-sm" onclick="addRule()">+ 항목 추가</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="cleanDuplicatedRuleLabels()" title="복사·반복으로 뒷중첩 누적된 검수항목명을 정리합니다">중복 라벨 정리</button>
             </div>
           </div></div>
         </div>
@@ -1360,6 +1361,39 @@ function syncRulesFromDom() {
 function refreshRules() { const h = $('#ruleRows'); if (h) h.innerHTML = courseRules.map((r, i) => ruleRowHtml(r, i)).join(''); }
 function addRule() { syncRulesFromDom(); courseRules.push({ label: '', keyword: '', gubun: '', semester: '', creditMin: 0, creditMax: 0, presence: 'Y', group: '', groupOp: 'AND', condOptional: false, on: true }); refreshRules(); }
 function delRule(i) { syncRulesFromDom(); courseRules.splice(i, 1); refreshRules(); }
+
+/* v2.0.24: 복사·반복으로 '제외(미사용 교과, ...)' 같은 문구가 뒷중첩 누적된 검수항목명(label)을 정리한다.
+   가장 자주 나오는 가장 짧은 공통 기본 문구를 기준으로, 그 기본 문구 이후에 나오는 다른 기본 문구들을 모두 제거해
+   고유 설명만 남기고 정리한다. */
+function cleanDuplicatedRuleLabels() {
+  syncRulesFromDom();
+  const EXCLUDE_MARK = '제외(';
+  const baseCount = {};
+  courseRules.forEach(r => {
+    const label = (r.label || '').trim();
+    if (!label) return;
+    const idx = label.indexOf(EXCLUDE_MARK);
+    const base = (idx >= 0 ? label.slice(0, idx) : label).trim();
+    if (!base) return;
+    baseCount[base] = (baseCount[base] || 0) + 1;
+  });
+  const commonBases = Object.keys(baseCount).filter(b => baseCount[b] >= 2).sort((a, b) => b.length - a.length);
+  let changed = 0;
+  courseRules.forEach(r => {
+    const label = (r.label || '').trim();
+    if (!label) return;
+    const base = commonBases.find(b => label.startsWith(b));
+    if (!base) return;
+    let rest = label.slice(base.length).trim();
+    if (!rest) return;
+    commonBases.forEach(b => { rest = rest.split(b).join(''); });
+    rest = rest.replace(/[(),\s]+$/g, '').replace(/^[(),\s]+/g, '').trim();
+    const cleaned = rest ? `${base}(${rest})` : base;
+    if (cleaned !== label) { r.label = cleaned; changed++; }
+  });
+  refreshRules();
+  toast(changed ? `${changed}개 항목의 중복 라벨을 정리했습니다. 내용 확인 후 '설정정보 저장하기'를 눌러주세요.` : '정리할 중복 라벨이 없습니다.');
+}
 
 /* 학기 조건 문자열(예: "2", "1,2", "3-4") → Set<number> 파싱. 비어있으면 null(전체 학기) */
 function parseSemSpec(spec) {
@@ -3237,7 +3271,7 @@ function breadcrumb(items) {
 Object.assign(window, {
   navigate, saveStandards, resetStandards, renderStandards,
   renderSpecStandards, stdTab, saveSpecStandards,
-  addRule, delRule,
+  addRule, delRule, cleanDuplicatedRuleLabels,
   addRow, delRow, clearRows, loadSample, runCheck, importCsv, downloadTemplate,
   onPdfPick, onPdfDrop, onPdfDragOver, onPdfDragLeave, runRoadmapAnalyze, saveCheckResult, saveCheckResultToHistory,
   openPrintPreview, closePrintPreview, printReport, exportReportPdf,
