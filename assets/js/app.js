@@ -2201,6 +2201,9 @@ function vocCourseRuleChecks(courseKey, rows, courses) {
     } else if (kw === '전공프로젝트실습') {
       // v2.0.11: '전공프로젝트실습'(학위전공심화과정)도 단어 포함이 아니라 '전공프로젝트실습1', '전공프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
       matched = pool.filter(c => ['전공프로젝트실습1', '전공프로젝트실습2'].includes(norm(c.name)));
+    } else if (/AI/i.test(kw)) {
+      // v2.0.23: AI교과편성기준 키워드는 단어 포함이 아니라 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => norm(c.name) === norm(kw));
     } else {
       matched = pool.filter(c => norm(c.name).includes(kw));
     }
@@ -2481,6 +2484,9 @@ function runCheck(courseKey) {
     } else if (kw === '전공프로젝트실습') {
       // v2.0.11: '전공프로젝트실습'(학위전공심화과정)도 단어 포함이 아니라 '전공프로젝트실습1', '전공프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
       matched = pool.filter(c => ['전공프로젝트실습1', '전공프로젝트실습2'].includes(c.name.replace(/\s+/g, '')));
+    } else if (/AI/i.test(kw)) {
+      // v2.0.23: AI교과편성기준 키워드는 단어 포함이 아니라 교과명과 완전일치하는 교과만 인정한다.
+      matched = pool.filter(c => c.name.replace(/\s+/g, '') === kw);
     } else {
       matched = pool.filter(c => c.name.replace(/\s+/g, '').includes(kw));
     }
