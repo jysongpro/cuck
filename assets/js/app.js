@@ -1978,7 +1978,10 @@ function runVocTechCheck(courseKey) {
   const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
   const safetyKey = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
   const safetyRegKeys = safetyRegNames.map(safetyKey).filter(k => k.length >= 2);
-  const safetyCourses = courses.filter(c => safetyRegKeys.includes(safetyKey(c.name)));
+  const safetyByList = courses.filter(c => safetyRegKeys.includes(safetyKey(c.name)));
+  // v2.0.25: 등록리스트 매칭에 더해, 교과명이 정확히 '산업안전'이고 NCS시간값이 있는 교과도 편성(Y)으로 인정
+  const safetyByNcs = courses.filter(c => c.name.replace(/\s+/g, '') === '산업안전' && (c.ncsHours || 0) > 0);
+  const safetyCourses = [...safetyByList, ...safetyByNcs].filter((c, i, a) => a.findIndex(x => x.name === c.name) === i);
   const safetyHoursSum = safetyCourses.reduce((s, c) => s + c.semTotal, 0);
   const safetySemesters = new Set();
   safetyCourses.forEach(c => c.sems.forEach(s => safetySemesters.add(s)));
@@ -2060,7 +2063,10 @@ function runVocTechCheck(courseKey) {
       const safetyNames = safetyNamesRaw0.length ? safetyNamesRaw0 : SAFETY_POOL_DEFAULT;
       const safetySeniorKey = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
       const safetySeniorKeys = safetyNames.map(safetySeniorKey).filter(k => k.length >= 2);
-      const sc = courses.filter(c => safetySeniorKeys.includes(safetySeniorKey(c.name)));
+      const scByList = courses.filter(c => safetySeniorKeys.includes(safetySeniorKey(c.name)));
+      // v2.0.25: 등록리스트 매칭에 더해, 교과명이 정확히 '산업안전'이고 NCS시간값이 있는 교과도 편성(Y)으로 인정
+      const scByNcs = courses.filter(c => c.name.replace(/\s+/g, '') === '산업안전' && (c.ncsHours || 0) > 0);
+      const sc = [...scByList, ...scByNcs].filter((c, i, a) => a.findIndex(x => x.name === c.name) === i);
       const sum = sc.reduce((a, c) => a + c.semTotal, 0);
       const badGroup = sc.filter(c => !['기초기술', '특화전공'].includes(c.gwan));
       const need = std.safetyHours || 10;
@@ -2228,7 +2234,10 @@ function vocCourseRuleChecks(courseKey, rows, courses) {
       const safetyRegNames = safetyRegNamesRaw0.length ? safetyRegNamesRaw0 : SAFETY_POOL_DEFAULT;
       const safetyKeyFn = (s) => (s || '').replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·ㆍ.,\-_/]+/g, '').toUpperCase();
       const safetyRegKeys = safetyRegNames.map(safetyKeyFn).filter(k => k.length >= 2);
-      matched = pool.filter(c => safetyRegKeys.includes(safetyKeyFn(c.name)));
+      const matchedByList = pool.filter(c => safetyRegKeys.includes(safetyKeyFn(c.name)));
+      // v2.0.25: 등록리스트 매칭에 더해, 교과명이 정확히 '산업안전'이고 NCS시간값이 있는 교과도 편성(Y)으로 인정
+      const matchedByNcs = courses.filter(c => c.name.replace(/\s+/g, '') === '산업안전' && (c.ncsHours || 0) > 0);
+      matched = [...matchedByList, ...matchedByNcs].filter((c, i, a) => a.findIndex(x => x.name === c.name) === i);
     } else if (kw === '융합프로젝트실습') {
       // v2.0.10: '융합프로젝트실습'은 단어 포함이 아니라 '융합프로젝트실습1', '융합프로젝트실습2' 교과명과 완전일치하는 교과만 인정한다.
       matched = pool.filter(c => ['융합프로젝트실습1', '융합프로젝트실습2'].includes(norm(c.name)));
@@ -2342,7 +2351,7 @@ function runCheck(courseKey) {
     .map(r => ({
       name: r.name, gwan: r.gwan, semester: +r.semester || 0,
       category: r.category, credit: +r.credit || 0,
-      theory: +r.theory || 0, practice: +r.practice || 0,
+      theory: +r.theory || 0, practice: +r.practice || 0, ncsHours: +r.ncs || 0,
     }))
     .filter(r => r.name && r.credit > 0);
 
@@ -3283,4 +3292,3 @@ Object.assign(window, {
   exportAllData, importAllData,
   updateHistoryField, exportHistoryToExcel,
 });
-
